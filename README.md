@@ -1,4 +1,4 @@
-# 📘 Libro-Estadística  
+# 📘 Libro-Estadística
 
 Proyecto colaborativo del libro de estadística.
 
