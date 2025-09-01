@@ -1,11 +1,9 @@
-# ✅ Carpeta de Rúbricas
+# 📂 Carpeta de Rúbricas
 
-Aquí se incluyen las rúbricas oficiales de evaluación de capítulos del *Libro de Estadística*.
+En esta carpeta se encuentran las rúbricas oficiales de evaluación de capítulos.
 
-## Archivos disponibles
-- **Rubrica_Capitulo_Teorico.pdf** → Instrumento de evaluación con niveles de desempeño (1 a 5, de Ausente a Profesional).
+## Rúbricas incluidas
+- 📑 [Rúbrica de Capítulo Teórico](rubricas/Rubrica_Capitulo_Teorico.pdf)
 
-## Uso
-Las rúbricas sirven para asegurar calidad académica y coherencia metodológica en cada capítulo.
-
-  - [Rúbrica de Capítulo Teórico](rubricas/Rubrica_Capitulo_Teorico.pdf)  
+Cada rúbrica está diseñada para garantizar calidad, homogeneidad y criterios claros de evaluación.
+ 
