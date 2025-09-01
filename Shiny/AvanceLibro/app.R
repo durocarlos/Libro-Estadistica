@@ -1,8 +1,20 @@
-# app.R — AvanceLibro (lee desde data/)
+# arriba del archivo
+library(here)
+
+# dentro de load_from_data()
+cron <- here::here("data", "Cronograma_Libro_Estadistica_CON_INDICE.xlsx")
+ind  <- here::here("data", "Indice_Autores.xlsx")
+
+file.exists(here::here("data","Cronograma_Libro_Estadistica_CON_INDICE.xlsx"))
+readxl::excel_sheets(here::here("data","Cronograma_Libro_Estadistica_CON_INDICE.xlsx"))
+
+
+# app.R — AvanceLibro (lee SIEMPRE desde data/ usando here::here)
 library(shiny); library(bslib); library(shinyWidgets); library(DT)
 library(readxl); library(writexl); library(janitor)
 library(dplyr); library(tidyr); library(lubridate); library(stringr)
 library(ggplot2); library(plotly); library(scales); library(timevis)
+library(here)        # <- clave para rutas a /data
 options(shiny.maxRequestSize = 100*1024^2)
 
 `%||%` <- function(a, b) if (is.null(a) || (is.atomic(a) && length(a)==1 && is.na(a))) b else a
@@ -13,7 +25,6 @@ sprintf('<span style="background:%s;color:white;padding:2px 8px;border-radius:12
 
 theme <- bs_theme(bootswatch="flatly", base_font = font_google("Inter"))
 
-# ------- UI -------
 ui <- page_navbar(
   title = "Libro de Estadística – Avance (desde /data)",
   theme = theme,
@@ -22,9 +33,11 @@ ui <- page_navbar(
         col_widths = c(4,8),
         card(
           card_header("1) Fuente de datos"),
-          helpText(HTML("Se cargan automáticamente estos archivos:<br>
-          <code>data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx</code> (Fases/Capitulos/Subcapitulos)<br>
-          <code>data/Indice_Autores.xlsx</code> (opcional).")),
+          helpText(HTML(
+            "Se cargan automáticamente:<br>
+            <code>data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx</code> (Fases/Capítulos/Subcapítulos)<br>
+            <code>data/Indice_Autores.xlsx</code> (opcional)."
+          )),
           actionButton("reload", "🔄 Recargar desde /data", class="btn btn-primary"),
           br(), br(),
           pickerInput("fil_autor", "Autor (principal o coautor)", choices=NULL, multiple=TRUE,
@@ -48,18 +61,24 @@ ui <- page_navbar(
   )
 )
 
-# ------- SERVER -------
 server <- function(input, output, session){
   rv <- reactiveValues(fases=NULL, caps=NULL, sub=NULL, indice=NULL)
   
   load_from_data <- function(){
-    cron <- "data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx"
-    ind  <- "data/Indice_Autores.xlsx"
-    validate(need(file.exists(cron), HTML("No se encontró <code>data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx</code>")))
-    fases <- read_excel(cron, sheet="Fases")   %>% clean_names()
-    caps  <- read_excel(cron, sheet="Capitulos") %>% clean_names()
+    cron <- here::here("data", "Cronograma_Libro_Estadistica_CON_INDICE.xlsx")
+    ind  <- here::here("data", "Indice_Autores.xlsx")
+    
+    validate(need(file.exists(cron),
+                  HTML("No se encontró <code>data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx</code>")
+    ))
+    
+    fases <- read_excel(cron, sheet="Fases")        %>% clean_names()
+    caps  <- read_excel(cron, sheet="Capitulos")    %>% clean_names()
     subs  <- read_excel(cron, sheet="Subcapitulos") %>% clean_names()
-    if (file.exists(ind)) indice <- tryCatch(read_excel(ind, sheet=1) %>% clean_names(), error=function(e) NULL) else indice <- NULL
+    
+    indice <- if (file.exists(ind)) {
+      tryCatch(read_excel(ind, sheet=1) %>% clean_names(), error=function(e) NULL)
+    } else NULL
     
     for (nm in intersect(names(fases), c("fecha_inicio","fecha_fin"))) fases[[nm]] <- coerce_date(fases[[nm]])
     for (nm in intersect(names(caps),  c("fecha_inicio","fecha_fin")))  caps[[nm]]  <- coerce_date(caps[[nm]])
@@ -68,10 +87,12 @@ server <- function(input, output, session){
     if (!"autor_principal" %in% names(caps) && "autor" %in% names(caps)) caps <- rename(caps, autor_principal = autor)
     if (!"coautor" %in% names(caps)) caps$coautor <- NA_character_
     if (!"avance_global" %in% names(caps)) caps$avance_global <- NA_real_
-    caps$avance_global <- suppressWarnings(as.numeric(caps$avance_global)); if (max(caps$avance_global, na.rm=TRUE) > 1.5) caps$avance_global <- caps$avance_global/100
+    caps$avance_global <- suppressWarnings(as.numeric(caps$avance_global))
+    if (max(caps$avance_global, na.rm=TRUE) > 1.5) caps$avance_global <- caps$avance_global/100
     
     if (!"avance" %in% names(subs)) subs$avance <- NA_real_
-    subs$avance <- suppressWarnings(as.numeric(subs$avance)); if (max(subs$avance, na.rm=TRUE) > 1.5) subs$avance <- subs$avance/100
+    subs$avance <- suppressWarnings(as.numeric(subs$avance))
+    if (max(subs$avance, na.rm=TRUE) > 1.5) subs$avance <- subs$avance/100
     
     rv$fases <- fases; rv$caps <- caps; rv$sub <- subs; rv$indice <- indice
     
