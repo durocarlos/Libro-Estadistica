@@ -1,33 +1,34 @@
 # 📘 Libro-Estadística
 
-Proyecto colaborativo del libro de estadística.  
-Incluye capítulos, datos de prueba, código en R/Shiny y documentos de planificación.
+Proyecto colaborativo del libro de estadística.
 
----
-
-## 📂 Estructura del repositorio
-
-- **data/** → Archivos de datos (Excel, CSV) usados en análisis y ejemplos.  
-- **planificacion/** → Documentos de organización del proyecto.  
-  - [Cronograma con índice](planificacion/Cronograma_Libro_Estadistica_CON_INDICE.xlsx)  
-  - [Índice de autores](planificacion/Indice_Autores.xlsx)  
-- **R/** → Scripts en R.  
-- **Shiny/** → Aplicaciones interactivas en Shiny.  
-- **docs/** → Documentos finales (PDF, informes, entregables).  
-
----
-
-## 📅 Cronograma
-
-➡️ [Descargar Cronograma](planificacion/Cronograma_Libro_Estadistica_CON_INDICE.xlsx)
-
----
-
-## ✍️ Autores
-
-➡️ [Índice de autores](planificacion/Indice_Autores.xlsx)
-
----
-
-## ⚖️ Licencia
+## 📄 Licencia
 Este proyecto está bajo licencia **MIT**, lo que permite su libre uso, distribución y modificación, siempre dando el debido crédito.
+
+## 📂 Proyecto Libro de Estadística
+Repositorio oficial del *Libro de Estadística*, un proyecto colaborativo con autores de distintos países de Latinoamérica.
+Aquí se organizan las **plantillas de redacción**, **rúbricas de evaluación**, cronogramas y materiales complementarios.
+
+---
+
+## 📌 Estructura del Repositorio
+
+- **plantillas/**
+  - 📄 [Plantilla del Capítulo Teórico](plantillas/Plantilla_Capitulo_Teorico.pdf)
+  - Cada plantilla incluye un enlace directo a su rúbrica asociada.
+
+- **rubricas/**
+  - 📄 [Rúbrica de Capítulo Teórico](rubricas/Rubrica_Capitulo_Teorico.pdf)
+
+- **planificacion/**
+  - 📊 Cronograma con índice de capítulos.
+  - 📑 Índice de autores.
+
+- **data/**
+  - Datasets de ejemplo para pruebas y ejercicios.
+
+---
+
+✍️ Coordinación editorial: **Carlos Bolívar Sarmiento Chugcho**  
+📍 Universidad Técnica de Machala
+
