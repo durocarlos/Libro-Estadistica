@@ -1,25 +1,70 @@
-# Shiny de Correos — Libro de Estadística
-# Envia correos personalizados a autores usando data/Indice_Autores.xlsx
-# Adjunta docs/Rubrica_Capitulo.pdf (opcional)
+# Shiny Correos — subcapítulos con fechas/avance/comentarios
 library(shiny); library(bslib); library(shinyWidgets); library(DT)
 library(readxl); library(janitor); library(dplyr); library(stringr)
-library(glue); library(blastula); library(here)
+library(glue); library(blastula); library(here); library(tidyr)
 
 theme <- bs_theme(bootswatch = "flatly", base_font = font_google("Inter"))
-
 `%||%` <- function(a,b) if (is.null(a) || (is.atomic(a)&&length(a)==1&&is.na(a))) b else a
 safe_col <- function(df, nm) if (nm %in% names(df)) df[[nm]] else NA_character_
 
-email_template <- function(row) {
-  cap    <- row$capitulo
+# ---------- helpers ----------
+fmt_date <- function(x){
+  if (inherits(x, "Date")) return(format(x, "%Y-%m-%d"))
+  y <- suppressWarnings(as.Date(x))
+  if (is.na(y)) return("")
+  format(y, "%Y-%m-%d")
+}
+fmt_avance <- function(x){
+  if (is.null(x) || all(is.na(x))) return(NA_character_)
+  x <- suppressWarnings(as.numeric(x))
+  if (is.na(x)) return(NA_character_)
+  if (x <= 1) x <- x * 100
+  paste0(round(x), "%")
+}
+build_sub_lines <- function(tbl){
+  if (nrow(tbl) == 0) return("—")
+  paste(apply(tbl, 1, function(r){
+    partes <- c()
+    
+    # título
+    partes <- c(partes, r[["titulo_subcapitulo"]] %||% "")
+    
+    # (fecha_inicio — fecha_fin)
+    fi <- fmt_date(r[["fecha_inicio"]])
+    ff <- fmt_date(r[["fecha_fin"]])
+    if (nzchar(fi) || nzchar(ff)) {
+      partes <- c(partes, sprintf("(%s — %s)", ifelse(nzchar(fi), fi, "?"), ifelse(nzchar(ff), ff, "?")))
+    }
+    
+    # [avance: 75%]
+    av <- fmt_avance(r[["avance"]])
+    if (!is.na(av)) partes <- c(partes, sprintf("[avance: %s]", av))
+    
+    # — comentario
+    com <- r[["comentarios"]] %||% ""
+    if (nzchar(trimws(com))) partes <- c(partes, paste0("— ", com))
+    
+    paste0("- ", paste(partes, collapse = " "))
+  }), collapse = "\n")
+}
+
+# -------- plantilla correo (usa subcapítulos detallados) --------
+email_template <- function(row, subs_long) {
+  cap    <- row$capitulo %||% row$capitulo_num %||% ""
   titulo <- row$titulo_capitulo %||% ""
-  autor  <- row$autor_principal %||% ""
+  autor  <- row$autor_principal %||% row$principal %||% ""
   coaut  <- row$coautor %||% ""
   
   f1 <- row$fase_1_fin %||% ""; f2 <- row$fase_2_fin %||% ""
   f3 <- row$fase_3_fin %||% ""; f4 <- row$fase_4_fin %||% ""; f5 <- row$fase_5_fin %||% ""
   
-  subs <- paste(na.omit(c(row$subcapitulo_1, row$subcapitulo_2, row$subcapitulo_3)), collapse="; ")
+  # subcapítulos detallados para el capítulo
+  cap_num <- suppressWarnings(as.integer(str_extract(cap, "^[0-9]+")))
+  if (is.na(cap_num)) cap_num <- suppressWarnings(as.integer(row$capitulo_num))
+  sub_tbl <- subs_long %>% filter(capitulo_num == cap_num) %>%
+    arrange(subcapitulo)
+  subs_md <- build_sub_lines(sub_tbl)
+  
   body_md <- glue("
 **Asunto:** Libro de Estadística – Encargo de {cap}: {titulo}
 
@@ -28,7 +73,8 @@ Estimado/a **{autor}**{ifelse(nchar(coaut)>0, glue(' (con {coaut})'), '')},
 Gracias por participar en el *Libro de Estadística*. Según el índice maestro, usted está a cargo de:
 
 - **{cap} – {titulo}**
-- **Subcapítulos sugeridos:** {subs}
+- **Subcapítulos sugeridos:** 
+{subs_md}
 
 **Hitos por fases (referenciales):**
 - Fase 1: Preparación y esquema – *{f1}*
@@ -52,6 +98,7 @@ Saludos cordiales,
   )
 }
 
+# ------------------------------- UI --------------------------------
 ui <- page_navbar(
   theme = theme, title = "Envío de correos – Libro de Estadística",
   nav("Cargar & revisar",
@@ -59,15 +106,18 @@ ui <- page_navbar(
         col_widths = c(4,8),
         card(
           card_header("1) Fuente"),
-          HTML("Se leerá <code>data/Indice_Autores.xlsx</code> (nombres flexibles; se limpian con <code>clean_names()</code>)."),
-          actionButton("reload", "🔄 Recargar índice", class="btn btn-primary"),
+          HTML("Se leerán <code>data/Indice_Autores.xlsx</code> y 
+               <code>data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx</code> 
+               (hoja <b>Subcapitulos</b>), uniéndose por <code>capitulo_num</code>.<br>
+               Si hay <i>fecha_inicio</i>, <i>fecha_fin</i>, <i>avance</i> o <i>comentarios</i> de subcapítulos, se incluirán en el correo."),
+          actionButton("reload", "🔄 Recargar datos", class="btn btn-primary"),
           br(), br(),
           prettySwitch("adj_rubrica", "Adjuntar rúbrica (docs/Rubrica_Capitulo.pdf)", TRUE, status="info"),
           prettySwitch("cc_coautor",  "CC al coautor si hay correo", TRUE, status="info"),
           prettySwitch("modo_prueba", "Modo prueba (no envía, guarda HTML)", TRUE, status="warning")
         ),
         card(
-          card_header("2) Índice – vista previa"),
+          card_header("2) Índice – vista previa (con subcapítulos)"),
           DTOutput("tbl_idx")
         )
       )
@@ -78,8 +128,7 @@ ui <- page_navbar(
         card(
           card_header("3) Selección"),
           pickerInput("sel_rows", "Filas a enviar", choices = NULL, multiple = TRUE,
-                      options = list(`actions-box`=TRUE)),
-          helpText("Las filas corresponden a autores/capítulos del índice.")
+                      options = list(`actions-box`=TRUE))
         ),
         card(
           card_header("4) Previsualización / Log"),
@@ -94,23 +143,71 @@ ui <- page_navbar(
   )
 )
 
+# ----------------------------- SERVER -------------------------------
 server <- function(input, output, session){
   
-  idx <- reactiveVal(NULL)
+  idx <- reactiveVal(NULL)        # índice de autores + join
+  subs_all <- reactiveVal(NULL)   # subcapítulos en formato largo
   
+  # --- Carga índice + subcapítulos desde Cronograma y join ---
   load_index <- function(){
-    path <- here::here("data","Indice_Autores.xlsx")
-    validate(need(file.exists(path), "No se encontró data/Indice_Autores.xlsx"))
-    df <- read_excel(path, sheet = 1) %>% clean_names()
+    # 1) Índice de autores
+    ind_path <- here::here("data","Indice_Autores.xlsx")
+    validate(need(file.exists(ind_path), "No se encontró data/Indice_Autores.xlsx"))
+    df <- read_excel(ind_path, 1) %>% clean_names()
     
+    # Mapeo de nombres → estándar
+    if ("capitulo_num"     %in% names(df)) df$capitulo_num     <- as.integer(df$capitulo_num)
+    if (!"capitulo" %in% names(df) && "capitulo_num" %in% names(df)) df$capitulo <- df$capitulo_num
+    if ("principal"        %in% names(df)) df$autor_principal  <- df$principal
+    if ("principal_correo" %in% names(df)) df$correo_principal <- df$principal_correo
+    if ("coautor_correo"   %in% names(df)) df$correo_coautor   <- df$coautor_correo
+    
+    # 2) Subcapítulos desde Cronograma (largo)
+    cron_path <- here::here("data","Cronograma_Libro_Estadistica_CON_INDICE.xlsx")
+    validate(need(file.exists(cron_path), "No se encontró data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx"))
+    subs_raw <- read_excel(cron_path, sheet = "Subcapitulos") %>% clean_names()
+    
+    # Asegurar columnas esperadas si no existen
+    for(nm in c("fecha_inicio","fecha_fin","avance","comentarios")){
+      if (!nm %in% names(subs_raw)) subs_raw[[nm]] <- NA
+    }
+    
+    subs_long_df <- subs_raw %>%
+      mutate(
+        capitulo_num = as.integer(str_extract(subcapitulo, "^[0-9]+")),
+        fecha_inicio = suppressWarnings(as.Date(fecha_inicio)),
+        fecha_fin    = suppressWarnings(as.Date(fecha_fin)),
+        avance       = suppressWarnings(as.numeric(avance))
+      ) %>%
+      select(capitulo_num, subcapitulo, titulo_subcapitulo, fecha_inicio, fecha_fin, avance, comentarios)
+    
+    subs_all(subs_long_df)
+    
+    # 3) Resumen en una cadena para mostrar en tabla (opcional)
+    subs_summary <- subs_long_df %>%
+      group_by(capitulo_num) %>%
+      summarise(subcapitulos = paste(titulo_subcapitulo, collapse = "; "), .groups="drop")
+    
+    # 4) Join por capitulo_num (si falta, derivarlo de capitulo)
+    if (!"capitulo_num" %in% names(df)) {
+      df$capitulo_num <- suppressWarnings(as.integer(str_extract(df$capitulo, "^[0-9]+")))
+    }
+    df <- df %>% left_join(subs_summary, by = "capitulo_num")
+    
+    # Crear vacías si faltan
     needed <- c("capitulo","titulo_capitulo","autor_principal","correo_principal",
-                "coautor","correo_coautor","subcapitulo_1","subcapitulo_2","subcapitulo_3",
+                "coautor","correo_coautor","subcapitulos",
                 "fase_1_fin","fase_2_fin","fase_3_fin","fase_4_fin","fase_5_fin")
     for(nm in setdiff(needed, names(df))) df[[nm]] <- NA_character_
     
+    # Etiquetas para selector
+    labs <- ifelse(!is.na(df$capitulo) & nzchar(df$capitulo),
+                   paste0(df$capitulo, " — ", df$titulo_capitulo),
+                   df$titulo_capitulo)
+    
     idx(df)
-    updatePickerInput(session, "sel_rows",
-                      choices = setNames(seq_len(nrow(df)), paste0(df$capitulo, " — ", df$titulo_capitulo)))
+    updatePickerInput(session, "sel_rows", choices = setNames(seq_len(nrow(df)), labs))
   }
   
   observeEvent(TRUE, load_index(), once = TRUE)
@@ -120,16 +217,35 @@ server <- function(input, output, session){
     req(idx()); datatable(idx(), options = list(pageLength = 10, scrollX = TRUE), rownames = TRUE)
   })
   
+  # -------- Previsualización --------
   output$preview_info <- renderUI({
     req(idx(), input$sel_rows)
     r  <- as.integer(input$sel_rows)[1]
     df <- idx()[r, , drop = FALSE]
-    tpl <- email_template(df)
+    tpl <- email_template(df, subs_all())
     HTML(glue("<h4>Asunto</h4><p>{tpl$subject}</p><h4>Cuerpo</h4><pre style='white-space:pre-wrap'>{tpl$body_md}</pre>"))
   })
   
+  # -------- Confirmación antes de enviar --------
   observeEvent(input$btn_send, {
     req(idx(), input$sel_rows)
+    n <- length(input$sel_rows)
+    showModal(modalDialog(
+      title = "Confirmar envío",
+      HTML(glue("Se enviarán <b>{n}</b> correo(s).<br>
+      Modo prueba: <b>{ifelse(isTRUE(input$modo_prueba),'ACTIVADO (no envía)','DESACTIVADO (envío real)')}</b>.")),
+      footer = tagList(
+        modalButton("Cancelar"),
+        actionButton("confirm_send", "Sí, continuar", class = "btn btn-danger")
+      )
+    ))
+  })
+  
+  # -------- Envío (solo si confirman) --------
+  observeEvent(input$confirm_send, {
+    removeModal()
+    req(idx(), input$sel_rows)
+    
     df_all <- idx()
     rows   <- as.integer(input$sel_rows)
     rubrica_pdf <- here::here("docs","Rubrica_Capitulo.pdf")
@@ -137,13 +253,13 @@ server <- function(input, output, session){
     
     for(r in rows){
       row <- df_all[r, , drop = FALSE]
-      tpl <- email_template(row)
+      tpl <- email_template(row, subs_all())
       
       to_principal <- safe_col(row, "correo_principal") %||% ""
       to_coautor   <- if (isTRUE(input$cc_coautor)) (safe_col(row, "correo_coautor") %||% "") else ""
       
       if (nchar(to_principal) == 0){
-        log_lines <- c(log_lines, glue("[Fila {r}] SIN correo principal — {row$capitulo}"))
+        log_lines <- c(log_lines, glue("[Fila {r}] SIN correo principal — {row$capitulo %||% row$capitulo_num %||% ''}"))
         next
       }
       
@@ -159,7 +275,6 @@ server <- function(input, output, session){
         export_email(em, file = outfile)
         log_lines <- c(log_lines, glue("[PREVIEW] Guardado {outfile}"))
       } else {
-        # Envío real usando la credencial guardada "office365"
         tryCatch({
           smtp_send(
             email   = em,
@@ -167,11 +282,11 @@ server <- function(input, output, session){
             to      = to_principal,
             cc      = if (nchar(to_coautor) > 0) to_coautor else NULL,
             subject = tpl$subject,
-            credentials = creds_key("office365")   # << aquí usamos tu credencial
+            credentials = creds_key("office365")   # credencial guardada en keyring
           )
-          log_lines <- c(log_lines, glue("[OK] Enviado a {to_principal} (cc: {to_coautor}) — {row$capitulo}"))
+          log_lines <- c(log_lines, glue("[OK] Enviado a {to_principal} (cc: {to_coautor}) — {row$capitulo %||% row$capitulo_num %||% ''}"))
         }, error = function(e){
-          log_lines <- c(log_lines, glue("[ERROR] {row$capitulo}: {conditionMessage(e)}"))
+          log_lines <- c(log_lines, glue("[ERROR] {row$capitulo %||% row$capitulo_num %||% ''}: {conditionMessage(e)}"))
         })
       }
     }
@@ -182,3 +297,4 @@ server <- function(input, output, session){
 }
 
 shinyApp(ui, server)
+
