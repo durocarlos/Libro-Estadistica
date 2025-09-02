@@ -1,4 +1,4 @@
-# app.R — Envío de correos (Excel maestro + subcapítulos por capítulo)
+# app.R — Envío de correos (Office365 + blastula)
 
 # ---- Paquetes ----
 library(shiny)
@@ -20,10 +20,13 @@ normalize_subs <- function(x){
   req(nrow(x) > 0)
   x <- janitor::clean_names(x)
   
-  # Garantizar columnas
-  need_col <- c("capitulo_num","subcapitulo","titulo_subcapitulo",
-                "fecha_inicio","fecha_fin","avance","comentarios")
-  for (nm in need_col) if (!nm %in% names(x)) x[[nm]] <- NA
+  if (!"capitulo_num"       %in% names(x)) x$capitulo_num       <- NA_integer_
+  if (!"subcapitulo"        %in% names(x)) x$subcapitulo        <- NA_character_
+  if (!"titulo_subcapitulo" %in% names(x)) x$titulo_subcapitulo <- NA_character_
+  if (!"fecha_inicio"       %in% names(x)) x$fecha_inicio       <- NA
+  if (!"fecha_fin"          %in% names(x)) x$fecha_fin          <- NA
+  if (!"avance"             %in% names(x)) x$avance             <- NA_real_
+  if (!"comentarios"        %in% names(x)) x$comentarios        <- NA_character_
   
   cap_from_capitulo <- if ("capitulo" %in% names(x)) {
     suppressWarnings(as.integer(stringr::str_extract(as.character(x$capitulo), "[0-9]+")))
@@ -98,8 +101,8 @@ ui <- page_navbar(
       card(
         card_header("1) Fuente de datos"),
         HTML("
-<p><b>Archivo único requerido:</b> <code>data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx</code></p>
-<p><b>Hojas esperadas:</b> <code>Capitulos</code> (índice) y <code>Subcapitulos</code> (detalle)</p>
+<p><b>Archivo requerido:</b> <code>data/Cronograma_Libro_Estadistica_CON_INDICE.xlsx</code></p>
+<p><b>Hojas esperadas:</b> <code>Capitulos</code>, <code>Subcapitulos</code> y opcional <code>Fases</code></p>
         "),
         actionButton("reload", "🔄 Recargar", class = "btn btn-primary"),
         br(), br(),
@@ -122,9 +125,9 @@ ui <- page_navbar(
         uiOutput("pick_row"),
         checkboxInput("cc_coautor", "CC al coautor", value = TRUE),
         checkboxInput("adj_rubrica", "Adjuntar rúbrica (docs/Rubrica_Capitulo.pdf)", value = TRUE),
-        checkboxInput("modo_prueba", "Modo prueba (guardar HTML en outbox/ y no enviar)", value = TRUE),
+        checkboxInput("modo_prueba", "Modo prueba (guardar HTML en outbox/ y no enviar)", value = FALSE),
         textInput("from_email", "Remitente (correo)", value = "cbsarmiento@utmachala.edu.ec"),
-        textInput("from_name",  "Nombre remitente",  value = "Coordinación Libro de Estadística"),
+        textInput("from_name",  "Nombre remitente", value = "Coordinación Libro de Estadística"),
         actionButton("send_btn", "✉️ Enviar / Generar", class = "btn btn-success")
       ),
       card(
@@ -148,6 +151,7 @@ server <- function(input, output, session){
   
   idx <- reactiveVal(NULL)
   subs_all <- reactiveVal(NULL)
+  fases_all <- reactiveVal(NULL)
   estado <- reactiveVal("—")
   sendlog <- reactiveVal("—")
   
@@ -160,28 +164,37 @@ server <- function(input, output, session){
     validate(need("Capitulos"    %in% sh, "No se encontró la hoja 'Capitulos'"))
     validate(need("Subcapitulos" %in% sh, "No se encontró la hoja 'Subcapitulos'"))
     
-    # Índice
+    # Índice (Capitulos)
     df <- read_excel(cron_path, sheet = "Capitulos") %>% clean_names()
     
-    # Normalizar nombres típicos
+    # Normalizar nombres habituales (por si vienen con otros alias)
     if (!"capitulo_num" %in% names(df)) {
-      df$capitulo_num <- suppressWarnings(as.integer(str_extract(df$capitulo, "[0-9]+")))
+      if ("capitulo" %in% names(df)) {
+        df$capitulo_num <- suppressWarnings(as.integer(str_extract(df$capitulo, "[0-9]+")))
+      } else {
+        df$capitulo_num <- NA_integer_
+      }
     }
-    if ("principal"        %in% names(df)) df$autor_principal  <- df$principal
-    if ("principal_correo" %in% names(df)) df$correo_principal <- df$principal_correo
-    if ("coautor_correo"   %in% names(df)) df$correo_coautor   <- df$coautor_correo
+    if ("principal"        %in% names(df) && !"autor_principal"  %in% names(df)) df$autor_principal  <- df$principal
+    if ("principal_correo" %in% names(df) && !"correo_principal" %in% names(df)) df$correo_principal <- df$principal_correo
+    if ("coautor_correo"   %in% names(df) && !"correo_coautor"   %in% names(df)) df$correo_coautor   <- df$coautor_correo
     
     # Subcapítulos
     subs_raw <- read_excel(cron_path, sheet = "Subcapitulos")
     subs <- normalize_subs(subs_raw)
-    
     validate(need(!any(is.na(subs$capitulo_num)),
-                  "No pude inferir capitulo_num en la hoja 'Subcapitulos'.
-       Incluye capitulo_num, o capitulo con número, o subcapitulo con prefijo N.N."))
+                  "No pude inferir capitulo_num en 'Subcapitulos'.
+       Incluye capitulo_num o subcapitulo con prefijo N.N."))
     
     subs_all(subs)
+    
+    # Fases (opcional)
+    fases_tbl <- if ("Fases" %in% sh) read_excel(cron_path, sheet = "Fases") %>% clean_names() else NULL
+    fases_all(fases_tbl)
+    
     estado(glue("OK: {nrow(subs)} subcapítulos leídos"))
     
+    # Resumen para índice
     resumen <- subs %>%
       group_by(capitulo_num) %>%
       summarise(subcapitulos = paste(titulo_subcapitulo, collapse = "; "), .groups = "drop")
@@ -198,21 +211,18 @@ server <- function(input, output, session){
     req(idx()); datatable(idx(), options = list(pageLength = 10, scrollX = TRUE), rownames = TRUE)
   })
   
-  # Selector de capítulos
   output$pick_row <- renderUI({
     req(idx())
     df <- idx()
     labs <- ifelse(!is.na(df$capitulo) & nzchar(df$capitulo),
                    paste0(df$capitulo, " — ", df$titulo_capitulo),
                    paste0("Cap ", df$capitulo_num, " — ", df$titulo_capitulo))
-    selectInput(
-      "row_pick", "Capítulo",
-      choices = setNames(seq_len(nrow(df)), labs),
-      width = "100%"
+    selectInput("row_pick", "Capítulo",
+                choices = setNames(seq_len(nrow(df)), labs),
+                width = "100%"
     )
   })
   
-  # Vista previa
   output$preview_html <- renderUI({
     req(idx(), subs_all(), input$row_pick)
     r <- as.integer(input$row_pick)
@@ -226,15 +236,25 @@ server <- function(input, output, session){
     autor  <- row$autor_principal %||% ""
     coaut  <- row$coautor %||% ""
     
-    fases <- c(fmt_fase(row$fase_1_fin), fmt_fase(row$fase_2_fin), fmt_fase(row$fase_3_fin),
-               fmt_fase(row$fase_4_fin), fmt_fase(row$fase_5_fin))
+    # Fases desde hoja Fases (si existe)
+    fases_tbl <- fases_all()
+    fases_vec <- rep("", 5)
+    if (!is.null(fases_tbl) && all(c("fase","fecha_inicio","fecha_fin") %in% names(fases_tbl))) {
+      fases_vec <- apply(head(fases_tbl, 5), 1, function(x){
+        nm <- as.character(x[["fase"]]) %||% ""
+        fi <- fmt_date(x[["fecha_inicio"]]); ff <- fmt_date(x[["fecha_fin"]])
+        paste0(nm, ifelse(nzchar(fi)|nzchar(ff), glue(" – {fi} a {ff}"), ""))
+      })
+      length(fases_vec) <- 5
+    }
     
     sub_tbl <- subs_all() %>% filter(capitulo_num == cap_num) %>% arrange(subcapitulo)
     
     subject <- glue("Libro de Estadística – {cap_txt}: {titulo}")
-    body_md <- compose_body_md(cap_txt, titulo, autor, coaut, sub_tbl, fases)
+    body_md <- compose_body_md(cap_txt, titulo, autor, coaut, sub_tbl, fases_vec)
     
-    HTML(glue("<h4>Asunto</h4><p>{subject}</p><h4>Cuerpo</h4><pre style='white-space:pre-wrap'>{body_md}</pre>"))
+    HTML(glue("<h4>Asunto</h4><p>{subject}</p>
+               <h4>Cuerpo</h4><pre style='white-space:pre-wrap'>{body_md}</pre>"))
   })
   
   output$tbl_subs_cap <- renderDT({
@@ -247,7 +267,7 @@ server <- function(input, output, session){
     datatable(sub_tbl, options = list(pageLength = 10, scrollX = TRUE))
   })
   
-  # Envío / Modo prueba
+  # ---- Envío ----
   observeEvent(input$send_btn, {
     req(idx(), subs_all(), input$row_pick)
     r <- as.integer(input$row_pick)
@@ -257,67 +277,77 @@ server <- function(input, output, session){
     cap_num <- suppressWarnings(as.integer(str_extract(cap_txt, "[0-9]+")))
     if (is.na(cap_num)) cap_num <- suppressWarnings(as.integer(row$capitulo_num))
     
-    titulo    <- row$titulo_capitulo %||% ""
-    autor     <- row$autor_principal  %||% ""
-    coaut     <- row$coautor          %||% ""
-    to_email  <- row$correo_principal %||% ""
-    cc_email  <- if (isTRUE(input$cc_coautor)) (row$correo_coautor %||% "") else ""
+    titulo   <- row$titulo_capitulo %||% ""
+    autor    <- row$autor_principal %||% ""
+    coaut    <- row$coautor %||% ""
+    to_email <- row$correo_principal %||% ""
+    cc_email <- if (isTRUE(input$cc_coautor)) (row$correo_coautor %||% "") else ""
     
-    validate(need(nzchar(to_email), "Este capítulo no tiene correo principal (correo_principal)."))
-    validate(need(nzchar(input$from_email), "Falta el remitente en 'Remitente (correo)'."))
+    validate(need(nzchar(to_email), "Este capítulo no tiene correo_principal."))
     
-    fases <- c(
-      fmt_fase(row$fase_1_fin), fmt_fase(row$fase_2_fin), fmt_fase(row$fase_3_fin),
-      fmt_fase(row$fase_4_fin), fmt_fase(row$fase_5_fin)
-    )
+    # Fases (mismo que en preview)
+    fases_tbl <- fases_all()
+    fases_vec <- rep("", 5)
+    if (!is.null(fases_tbl) && all(c("fase","fecha_inicio","fecha_fin") %in% names(fases_tbl))) {
+      fases_vec <- apply(head(fases_tbl, 5), 1, function(x){
+        nm <- as.character(x[["fase"]]) %||% ""
+        fi <- fmt_date(x[["fecha_inicio"]]); ff <- fmt_date(x[["fecha_fin"]])
+        paste0(nm, ifelse(nzchar(fi)|nzchar(ff), glue(" – {fi} a {ff}"), ""))
+      })
+      length(fases_vec) <- 5
+    }
     
     sub_tbl <- subs_all() %>% filter(capitulo_num == cap_num) %>% arrange(subcapitulo)
     
     subject <- glue("Libro de Estadística – {cap_txt}: {titulo}")
-    body_md <- compose_body_md(cap_txt, titulo, autor, coaut, sub_tbl, fases)
+    body_md <- compose_body_md(cap_txt, titulo, autor, coaut, sub_tbl, fases_vec)
     
     email <- blastula::compose_email(
-      body   = blastula::md(body_md),
-      footer = blastula::md(glue("_Enviado por la coordinación · {format(Sys.time(), '%Y-%m-%d %H:%M')}._"))
+      body = md(body_md),
+      footer = md(glue("_Enviado por la coordinación · {format(Sys.time(), '%Y-%m-%d %H:%M')}._"))
     )
     
-    # Adjuntar rúbrica si existe y se solicita
-    if (isTRUE(input$adj_rubrica)) {
-      attach_path <- here::here("docs","Rubrica_Capitulo.pdf")
-      if (file.exists(attach_path)) {
-        email <- email %>% blastula::add_attachment(file = attach_path)
-      }
+    # Adjuntar rúbrica si existe y se pide
+    attach_path <- if (isTRUE(input$adj_rubrica)) here::here("docs","Rubrica_Capitulo.pdf") else ""
+    if (isTRUE(input$adj_rubrica) && file.exists(attach_path)) {
+      email <- email %>% add_attachment(file = attach_path)
     }
     
-    # Modo prueba: guarda HTML y no envía
+    # Modo prueba: guardar HTML
     if (isTRUE(input$modo_prueba)) {
       outdir <- here::here("Shiny","Correos","outbox")
       if (!dir.exists(outdir)) dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
       fhtml <- file.path(outdir, glue("PREVIEW_{cap_num}_{format(Sys.time(), '%Y%m%d_%H%M%S')}.html"))
-      tryCatch({
-        email %>% blastula::render_email() %>% writeLines(con = fhtml)
-        sendlog(glue("📝 Modo prueba: guardado {basename(fhtml)}\nPara: {to_email}  CC: {cc_email}"))
-      }, error = function(e){
-        sendlog(glue("❌ Error al guardar HTML: {e$message}"))
-      })
+      tryCatch(
+        {
+          email %>% blastula::render_email() %>% writeLines(con = fhtml)
+          sendlog(glue("📝 Modo prueba: guardado {basename(fhtml)}\nPara: {to_email}  CC: {cc_email}"))
+        },
+        error = function(e){
+          sendlog(glue("❌ Error al guardar HTML: {e$message}"))
+        }
+      )
       return(invisible())
     }
     
-    # Envío real con Office365 usando la credencial guardada
-    tryCatch({
-      blastula::smtp_send(
-        email       = email,
-        from        = tolower(input$from_email),   # Debe coincidir con la credencial
-        from_name   = input$from_name,
-        to          = to_email,
-        cc          = if (nzchar(cc_email)) cc_email else NULL,
-        subject     = subject,
-        credentials = blastula::creds_key("office365")
-      )
-      sendlog(glue("✅ Enviado a {to_email}{ifelse(nzchar(cc_email), paste0(' (CC: ', cc_email, ')'), '')}"))
-    }, error = function(e){
-      sendlog(glue("❌ Error al enviar: {e$message}"))
-    })
+    # Envío real con credencial guardada (keyring)
+    tryCatch(
+      {
+        blastula::smtp_send(
+          email        = email,
+          from         = input$from_email,          # remitente mostrado
+          from_name    = input$from_name,           # nombre mostrado
+          to           = to_email,
+          cc           = if (nzchar(cc_email)) cc_email else NULL,
+          subject      = subject,
+          credentials  = creds_key("office365")     # ya creada con create_smtp_creds_key()
+        )
+        sendlog(glue("✅ Enviado a {to_email}{ifelse(nzchar(cc_email), paste0(' (CC: ', cc_email, ')'), '')}"))
+      },
+      error = function(e){
+        sendlog(glue("❌ Error al enviar: {e$message}"))
+      }
+    )
   })
   
   output$send_log <- renderText(sendlog())
@@ -325,4 +355,5 @@ server <- function(input, output, session){
 
 # ---- Run ----
 shinyApp(ui, server)
+
 
