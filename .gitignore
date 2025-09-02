@@ -1,49 +1,60 @@
-# History files
+# ===== Archivos de historial de R =====
 .Rhistory
 .Rapp.history
 
-# Session Data files
+# ===== Archivos de sesión =====
 .RData
 .RDataTmp
 
-# User-specific files
+# ===== Archivos de usuario =====
 .Ruserdata
 
-# Example code in package build process
+# ===== Código de ejemplo en build de paquetes =====
 *-Ex.R
 
-# Output files from R CMD build
+# ===== Archivos de salida de build/check =====
 /*.tar.gz
-
-# Output files from R CMD check
 /*.Rcheck/
 
-# RStudio files
+# ===== Archivos de RStudio =====
 .Rproj.user/
+*.Rproj
 
-# produced vignettes
+# ===== Vignettes generadas =====
 vignettes/*.html
 vignettes/*.pdf
 
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
+# ===== Tokens/OAuth =====
 .httr-oauth
 
-# knitr and R markdown default cache directories
+# ===== Caché de knitr / R Markdown =====
 *_cache/
 /cache/
 
-# Temporary files created by R markdown
+# ===== Archivos temporales creados por R Markdown =====
 *.utf8.md
 *.knit.md
 
-# R Environment Variables
+# ===== Variables de entorno de R =====
 .Renviron
 
-# pkgdown site
+# ===== Carpeta de sitio pkgdown =====
 docs/
 
-# translation temp files
+# ===== Archivos temporales de traducción =====
 po/*~
 
-# RStudio Connect folder
+# ===== RStudio Connect =====
 rsconnect/
+
+# ===== Proyecto Libro de Estadística =====
+
+# Carpeta de salida de Shiny (no queremos correos de prueba)
+Shiny/Correos/outbox/
+
+# Logs y archivos temporales
+*.log
+*.tmp
+
+# Archivos temporales de Excel (cuando Excel crea copias locales)
+~$*.xlsx
