@@ -58,3 +58,12 @@ Shiny/Correos/outbox/
 
 # Archivos temporales de Excel (cuando Excel crea copias locales)
 ~$*.xlsx
+
+
+# ===== Archivos temporales de Power BI =====
+*.pbix~
+
+# ===== Archivos exportados de Power Automate =====
+automate/*.zip
+automate/*.json
+
