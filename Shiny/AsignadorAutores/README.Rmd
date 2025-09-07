@@ -1,0 +1,15 @@
+# 📘 Asignador de Autores — Libro de Estadística
+
+Aplicación **Shiny** para gestionar la asignación de autores y coautores a capítulos y subcapítulos del proyecto *Libro de Estadística*.  
+Permite:
+
+- Seleccionar un capítulo y subcapítulo.
+- Asignar autores y coautores con roles (`Autor principal`, `Coautor`, `Revisor`, `Coordinador`).
+- Modificar y actualizar asignaciones.
+- Heredar autores de un capítulo hacia sus subcapítulos.
+
+---
+
+## 📂 Estructura del proyecto
+
+
