@@ -143,7 +143,52 @@ ui <- fluidPage(
         tabPanel("Equipo del subcapítulo", DTOutput("tabla_sub"))
       )
     )
+  ),
+  
+  # ======== (AGREGADO) Leyenda fija al final de la página ========
+ 
+  # --- LEYENDA flotante (abajo-derecha) ---
+  tags$head(tags$style(HTML("
+  .legend-fixed {
+    position: fixed;
+    right: 10px; bottom: 10px;
+    width: 35%; max-width: 420px;
+    z-index: 1000; background: #ffffff;
+    border: 1px solid #e5e5e5;
+    box-shadow: 0 0 8px rgba(0,0,0,.10);
+    border-radius: 6px;
+  }
+  .legend-fixed .legend-inner {
+    padding: 10px 14px;
+    font-size: 13px; line-height: 1.35;
+  }
+  .legend-fixed ul { margin-bottom: 0; padding-left: 18px; }
+  /* En pantallas pequeñas, que use casi todo el ancho */
+  @media (max-width: 992px) {
+    .legend-fixed { right: 8px; left: 8px; width: auto; max-width: none; }
+  }
+"))),
+  div(
+    class = "legend-fixed",
+    div(
+      class = "legend-inner",
+      wellPanel(
+        tags$b("Leyenda rápida:"),
+        tags$ul(
+          tags$li(tags$b("Asignar a CAPÍTULO / SUBCAPÍTULO:"), " crea la relación con el autor y rol indicado (si ya existe, se ignora)."),
+          tags$li(tags$b("Quitar de CAPÍTULO / SUBCAPÍTULO:"), " elimina la relación seleccionada en la tabla."),
+          tags$li(tags$b("Nuevo rol / Nuevo orden"), " + ", tags$b("Actualizar en ..."), ": modifica el registro seleccionado."),
+          tags$li(tags$b("Subir / Bajar:"), " mueve el autor dentro del equipo respetando que el ", tags$i("Autor principal"), " queda primero."),
+          tags$li(tags$b("Normalizar orden:"), " reenumera el orden empezando en 1 (principal primero, luego alfabético)."),
+          tags$li(tags$b("Descargas CSV:"), " exportan el equipo del capítulo, del subcapítulo o el consolidado.")
+        )
+      )
+    )
   )
+  # --- FIN LEYENDA flotante ---
+  
+  
+  # ======== FIN AGREGADO ========
 )
 
 # ---------- SERVER ----------

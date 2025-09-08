@@ -150,10 +150,10 @@ write_csv(fases,                file.path(out_dir, "fases.csv"))
 cat("\n==== RESUMEN ====\n")
 cat("Tablas:", paste(dbListTables(con), collapse=", "), "\n")
 cat("Capítulos:", nrow(capitulos), " | Fases:", nrow(fases), "\n")
-cat("Autores por capítulo (primeros 10):\n")
-print(head(autores_por_cap, 10))
+cat("Autores por capítulo (primeros 40):\n")
+print(head(autores_por_cap, 40))
 cat("\nAvance por capítulo (primeros 10):\n")
-print(head(avance_cap, 10))
+print(head(avance_cap, 40))
 cat("\nArchivos generados en:\n", normalizePath(out_dir), "\n")
 
 # --------------------------

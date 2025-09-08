@@ -315,4 +315,75 @@ UPDATE autor SET breve_resena_biografica = NULL WHERE autor_id = 14;
 UPDATE autor SET breve_resena_biografica = 'He participado en investigaciones sobre bienestar psicológico en personal de salud, acoso escolar y competencias socioemocionales en adolescentes. En la actualidad, desarrollo estudios psicométricos sobre instrumentos como la Escala de Conducta Prosocial en Adultos de Lima Metropolitana (Caprara et al.)' WHERE autor_id = 15;
 
 UPDATE autor SET breve_resena_biografica = 'Soy docente e investigadora en la Universidad Tecnológica Empresarial de Guayaquil, donde enseño en las carreras de Ingeniería de Software, Telecomunicaciones y Sistemas de Información. Soy Licenciada en Sistemas de Información, Magíster en Educación Informática y curso una Maestría en Big Data y Ciencia de Datos. Mi trayectoria combina experiencia en desarrollo de sistemas, dirección de proyectos tecnológicos, tutoría de tesis y publicaciones científicas en áreas de inteligencia artificial, IoT y transformación digital, siempre con el compromiso de aportar a la innovación y sostenibilidad educativa y empresarial' WHERE autor_id = 16;
-SELECT autor_id, nombre_completo, breve_resena_biografica FROM autor;
+USE libro;
+USE libro;
+
+DROP TABLE IF EXISTS capitulo_fase;
+
+CREATE TABLE capitulo_fase (
+  capitulo_fase_id INT AUTO_INCREMENT PRIMARY KEY,
+  capitulo_id INT NOT NULL,        -- mismo tipo que capitulo.capitulo_id
+  fase_id TINYINT NOT NULL,        -- mismo tipo que fase.fase_id
+  fecha_asignacion DATE,
+  fecha_cierre DATE,
+  CONSTRAINT fk_cf_capitulo FOREIGN KEY (capitulo_id) REFERENCES capitulo(capitulo_id) ON DELETE CASCADE,
+  CONSTRAINT fk_cf_fase     FOREIGN KEY (fase_id)     REFERENCES fase(fase_id)         ON DELETE CASCADE,
+  UNIQUE KEY uq_capitulo_fase (capitulo_id, fase_id)
+) ENGINE=InnoDB;
+DESCRIBE capitulo_fase;
+CREATE TABLE IF NOT EXISTS capitulo_fase (
+  capitulo_fase_id INT AUTO_INCREMENT PRIMARY KEY,
+  capitulo_id      INT      NOT NULL,
+  fase_id          TINYINT  NOT NULL,
+  fecha_asignacion DATE     NULL,
+  fecha_cierre     DATE     NULL,
+  -- Evita duplicar la misma fase para el mismo capítulo
+  CONSTRAINT uq_capitulo_fase UNIQUE (capitulo_id, fase_id),
+  -- Llaves foráneas
+  CONSTRAINT fk_cf_capitulo
+    FOREIGN KEY (capitulo_id)
+    REFERENCES capitulo(capitulo_id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_cf_fase
+    FOREIGN KEY (fase_id)
+    REFERENCES fase(fase_id)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+DESCRIBE capitulo_fase;
+-- Evitar que un capítulo tenga la misma fase más de una vez
+ALTER TABLE capitulo_fase
+  ADD CONSTRAINT uq_capitulo_fase UNIQUE (capitulo_id, fase_id);
+
+-- Relación con capitulo
+ALTER TABLE capitulo_fase
+  ADD CONSTRAINT fk_cf_capitulo
+  FOREIGN KEY (capitulo_id)
+  REFERENCES capitulo(capitulo_id)
+  ON DELETE CASCADE
+  ON UPDATE CASCADE;
+
+USE libro;
+
+-- índices (funciona en Workbench)
+SHOW INDEX FROM capitulo_fase;
+
+-- equivalentes:
+SHOW KEYS FROM capitulo_fase;
+SHOW INDEXES FROM capitulo_fase;
+
+-- alternativa “a prueba de balas” vía information_schema
+SELECT index_name, column_name, non_unique, seq_in_index
+FROM information_schema.statistics
+WHERE table_schema = 'libro'
+  AND table_name   = 'capitulo_fase'
+ORDER BY index_name, seq_in_index;
+
+-- y para ver claves foráneas existentes
+SELECT constraint_name, column_name,
+       referenced_table_name, referenced_column_name
+FROM information_schema.KEY_COLUMN_USAGE
+WHERE table_schema = 'libro'
+  AND table_name   = 'capitulo_fase'
+  AND referenced_table_name IS NOT NULL;

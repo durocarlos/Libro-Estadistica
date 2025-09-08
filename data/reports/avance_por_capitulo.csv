@@ -1,0 +1,33 @@
+capitulo_id,numero,titulo,sub_total,sub_maquetados,sub_aprobados,pct_aprob,pct_maquet
+1,1,Conceptos básicos de estadística,0,NA,NA,0,0
+2,2,Variables y escalas de medición,0,NA,NA,0,0
+3,3,Medidas de tendencia central y dispersión,0,NA,NA,0,0
+4,4,Representación gráfica,0,NA,NA,0,0
+5,5,Fundamentos del muestreo,0,NA,NA,0,0
+6,6,Distribuciones de probabilidad,0,NA,NA,0,0
+7,7,Distribución normal y sus aplicaciones,0,NA,NA,0,0
+8,8,Estimación de parámetros,0,NA,NA,0,0
+9,9,Pruebas de hipótesis: fundamentos,0,NA,NA,0,0
+10,10,Pruebas para medias,0,NA,NA,0,0
+11,11,ANOVA,0,NA,NA,0,0
+12,12,Pruebas no paramétricas,0,NA,NA,0,0
+13,13,Correlación,0,NA,NA,0,0
+14,14,Regresión lineal simple,0,NA,NA,0,0
+15,15,Regresión múltiple,0,NA,NA,0,0
+16,16,Diagnóstico y validación de modelos,0,NA,NA,0,0
+17,17,Fundamentos del análisis multivariado,0,NA,NA,0,0
+18,18,Modelos de ecuaciones estructurales (SEM),0,NA,NA,0,0
+19,19,SmartPLS: uso y aplicaciones,0,NA,NA,0,0
+20,20,Interpretación de resultados en PLS-SEM,0,NA,NA,0,0
+21,21,Introducción a las series de tiempo,0,NA,NA,0,0
+22,22,Métodos de suavizamiento,0,NA,NA,0,0
+23,23,Modelos ARIMA y Box–Jenkins,0,NA,NA,0,0
+24,24,Aplicaciones prácticas de pronósticos,0,NA,NA,0,0
+25,25,Análisis con R,0,NA,NA,0,0
+26,26,Análisis con Python,0,NA,NA,0,0
+27,27,Análisis con SPSS,0,NA,NA,0,0
+28,28,Análisis con Excel,0,NA,NA,0,0
+29,29,Aplicaciones en educación superior,0,NA,NA,0,0
+30,30,Aplicaciones en negocios y empresas,0,NA,NA,0,0
+31,31,Aplicaciones en políticas públicas,0,NA,NA,0,0
+32,32,Tendencias futuras de la estadística aplicada,0,NA,NA,0,0
