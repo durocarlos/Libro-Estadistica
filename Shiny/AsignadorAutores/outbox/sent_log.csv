@@ -1,0 +1,12 @@
+"timestamp","to","cc","bcc","subject","modo_prueba","resultado","detalle"
+"2025-09-07 22:41:36","cbsarmiento@utmachala.edu.ec","","","Prueba con la ayuda de dios",FALSE,"ERROR","Unknown option: from_name"
+"2025-09-07 22:42:22","cbsarmiento@utmachala.edu.ec","","","Prueba con la ayuda de dios",FALSE,"ERROR","Unknown option: from_name"
+"2025-09-07 22:50:37","cbsarmiento@utmachala.edu.ec","","","Envio con la ayuda del todopoderoso",FALSE,"ERROR","Fallo SMTP (¿credencial inexistente o mal configurada?)"
+"2025-09-07 22:51:21","cbsarmiento@utmachala.edu.ec","","","Envio con la ayuda del todopoderoso",FALSE,"ERROR","Fallo SMTP (¿credencial inexistente o mal configurada?)"
+"2025-09-07 23:02:46","cbsarmiento@utmachala.edu.ec","","","Esta vez si",FALSE,"ERROR","Failed sending data to the peer [smtp.office365.com]:
+MAIL failed: 501"
+"2025-09-07 23:06:25","cbsarmiento@utmachala.edu.ec","","","En ti confio señor",FALSE,"ERROR","Failed sending data to the peer [smtp.office365.com]:
+MAIL failed: 501"
+"2025-09-07 23:16:52","carlosarmientos@gmail.com","cbsarmiento@utmachala.edu.ec","","Prueba",FALSE,"ERROR","Failed sending data to the peer [smtp.office365.com]:
+MAIL failed: 501"
+"2025-09-07 23:24:37","blastula-v1-office365","cbsarmiento@utmachala.edu.ec","lmmaguinac@ucvvirtual.edu.pe","lmmaguinac@ucvvirtual.edu.pe","lmmaguinac@ucvvirtual.edu.pe","Prueba",FALSE,"ERROR","There is no blastula key that corresponds to the `id` of \"blastula-v1-office365\"."
