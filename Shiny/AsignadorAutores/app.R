@@ -79,6 +79,11 @@ normalizar_sub <- function(con, sub){
      WHERE sa.subcapitulo_id=?", params=list(sub))
 }
 
+# --- Helper: enteros seguros a DB (vacío -> NA -> NULL en SQL) ---
+to_db_int <- function(x) {
+  if (is.null(x) || length(x)==0 || is.na(x) || !nzchar(as.character(x))) NA_integer_ else as.integer(x)
+}
+
 # ============== MÓDULO: Correos (libre) + Contactos (tabla autor) ==============
 correo_libre_ui <- function(id){
   ns <- NS(id)
@@ -493,7 +498,7 @@ server <- function(input, output, session){
   # --------- ALTAS/BAJAS/UPDATES ----------
   observeEvent(input$add_cap, {
     v_cap <- cap_id(con, as.integer(input$cap_num)); v_aut <- as.integer(input$autor); v_rol <- rol_id(con, input$rol)
-    v_ord <- if (is.na(input$orden)) NULL else as.integer(input$orden)
+    v_ord <- to_db_int(input$orden)
     validate(need(!is.na(v_cap),"Capítulo no válido"), need(!is.na(v_aut),"Autor no válido"), need(!is.na(v_rol),"Rol no válido"))
     if (v_rol==1 && tiene_principal_cap(con, v_cap)) { showNotification("Ya existe Autor principal en este capítulo", type="error"); return(NULL) }
     exec(con,"INSERT IGNORE INTO capitulo_autor (capitulo_id, autor_id, rol_id, orden) VALUES (?,?,?,?)", params=list(v_cap, v_aut, v_rol, v_ord))
@@ -501,7 +506,7 @@ server <- function(input, output, session){
   })
   observeEvent(input$add_sub, {
     v_sub <- sub_id(con, as.integer(input$cap_num), as.integer(input$sub_num)); v_aut <- as.integer(input$autor); v_rol <- rol_id(con, input$rol)
-    v_ord <- if (is.na(input$orden)) NULL else as.integer(input$orden)
+    v_ord <- to_db_int(input$orden)
     validate(need(!is.na(v_sub),"Subcapítulo no válido"), need(!is.na(v_aut),"Autor no válido"), need(!is.na(v_rol),"Rol no válido"))
     if (v_rol==1 && tiene_principal_sub(con, v_sub)) { showNotification("Ya existe Autor principal en este subcapítulo", type="error"); return(NULL) }
     exec(con,"INSERT IGNORE INTO subcapitulo_autor (subcapitulo_id, autor_id, rol_id, orden) VALUES (?,?,?,?)", params=list(v_sub, v_aut, v_rol, v_ord))
@@ -512,13 +517,13 @@ server <- function(input, output, session){
   observeEvent(input$rm_sub, { s<-input$tabla_sub_rows_selected; req(length(s)==1); df<-sub_df(); exec(con,"DELETE FROM subcapitulo_autor WHERE subcapitulo_id=? AND autor_id=? AND rol_id=?", params=list(df$subcapitulo_id[s], df$autor_id[s], df$rol_id[s])); normalizar_sub(con, df$subcapitulo_id[s]); showNotification("Eliminado del subcapítulo ✔", type="message") })
   
   observeEvent(input$upd_cap, { s<-input$tabla_cap_rows_selected; req(length(s)==1); df<-cap_df()
-  new_rol <- rol_id(con, input$rol_edit); new_ord <- if (is.na(input$orden_edit)) NULL else as.integer(input$orden_edit)
+  new_rol <- rol_id(con, input$rol_edit); new_ord <- to_db_int(input$orden_edit)
   if (new_rol==1 && tiene_principal_cap(con, df$capitulo_id[s]) && df$rol_id[s]!=1) { showNotification("Ya existe Autor principal en este capítulo", type="error"); return(NULL) }
   exec(con,"UPDATE capitulo_autor SET rol_id=?, orden=? WHERE capitulo_id=? AND autor_id=?", params=list(new_rol, new_ord, df$capitulo_id[s], df$autor_id[s]))
   normalizar_cap(con, df$capitulo_id[s]); showNotification("Actualizado en capítulo ✔", type="warning")
   })
   observeEvent(input$upd_sub, { s<-input$tabla_sub_rows_selected; req(length(s)==1); df<-sub_df()
-  new_rol <- rol_id(con, input$rol_edit); new_ord <- if (is.na(input$orden_edit)) NULL else as.integer(input$orden_edit)
+  new_rol <- rol_id(con, input$rol_edit); new_ord <- to_db_int(input$orden_edit)
   if (new_rol==1 && tiene_principal_sub(con, df$subcapitulo_id[s]) && df$rol_id[s]!=1) { showNotification("Ya existe Autor principal en este subcapítulo", type="error"); return(NULL) }
   exec(con,"UPDATE subcapitulo_autor SET rol_id=?, orden=? WHERE subcapitulo_id=? AND autor_id=?", params=list(new_rol, new_ord, df$subcapitulo_id[s], df$autor_id[s]))
   normalizar_sub(con, df$subcapitulo_id[s]); showNotification("Actualizado en subcapítulo ✔", type="warning")
@@ -587,7 +592,7 @@ server <- function(input, output, session){
                              columnDefs=list(list(visible=FALSE, targets=0))))
   })
   
-  # ---- Cargar autor robusto (botón y cambio del picker) ----
+  # ---- Cargar autor robusto ----
   load_autor_by_id <- function(id_sel) {
     id_num <- suppressWarnings(as.integer(id_sel))
     if (is.na(id_num)) { showNotification("Selección inválida (id no numérico).", type="error"); return(invisible()) }
@@ -653,8 +658,8 @@ server <- function(input, output, session){
     req(input$autor_pick)
     validate(need(nchar(trimws(input$a_nombre))>0, "Nombre requerido"),
              need(nchar(trimws(input$a_email))>0,  "Email requerido"))
-    foto_blob <- NULL; mime <- NULL; fname <- NULL; nbytes <- NULL
     set_foto  <- ""
+    foto_blob <- NULL; mime <- NULL; fname <- NULL; nbytes <- NULL
     if (!is.null(input$a_foto)) {
       f <- input$a_foto
       bin <- readBin(f$datapath, what="raw", n = file.info(f$datapath)$size)
@@ -721,7 +726,9 @@ server <- function(input, output, session){
             GROUP BY c.capitulo_id, c.numero, c.titulo
             ORDER BY c.numero;")
   })
-  get_fases <- reactive({ q(con,"SELECT fase_id, nombre, fecha_inicio, fecha_fin FROM fase ORDER BY fase_id;") })
+  get_fases <- reactive({
+    q(con,"SELECT fase_id, nombre, fecha_inicio, fecha_fin FROM fase ORDER BY fase_id;")
+  })
   get_sub_prev <- reactive({
     q(con,"SELECT c.capitulo_id, c.numero AS cap_numero, sc.numero AS sub_numero,
                   c.titulo AS cap_titulo, sc.titulo AS sub_titulo,
@@ -735,40 +742,129 @@ server <- function(input, output, session){
             LIMIT 100;")
   })
   
-  portada_fil <- reactive({ df <- get_portada(); if (!nrow(df)) return(df); df %>% filter(capitulo_id %in% input$r_caps, rol_id %in% input$r_roles) })
-  avance_fil  <- reactive({ df <- get_avance();  if (!nrow(df)) return(df); df %>% filter(capitulo_id %in% input$r_caps) })
+  portada_fil <- reactive({
+    df <- get_portada(); if (!nrow(df)) return(df)
+    df %>% filter(capitulo_id %in% input$r_caps, rol_id %in% input$r_roles)
+  })
+  avance_fil  <- reactive({
+    df <- get_avance();  if (!nrow(df)) return(df)
+    df %>% filter(capitulo_id %in% input$r_caps)
+  })
   fases_fil   <- reactive({
     df <- get_fases(); if (!nrow(df)) return(df)
-    if (!any(is.na(input$r_fechas))) df <- df %>% filter(as.Date(fecha_fin) >= as.Date(input$r_fechas[1]) & as.Date(fecha_inicio) <= as.Date(input$r_fechas[2]))
+    if (!any(is.na(input$r_fechas))) {
+      df <- df %>% filter(as.Date(fecha_fin) >= as.Date(input$r_fechas[1]) &
+                            as.Date(fecha_inicio) <= as.Date(input$r_fechas[2]))
+    }
     df
   })
-  sub_prev_fil <- reactive({ df <- get_sub_prev(); if (!nrow(df)) return(df); df %>% filter(capitulo_id %in% input$r_caps) })
+  sub_prev_fil <- reactive({
+    df <- get_sub_prev(); if (!nrow(df)) return(df)
+    df %>% filter(capitulo_id %in% input$r_caps)
+  })
   
-  r_aut_cap <- reactive({ portada_fil() %>% group_by(capitulo_id, cap_numero, cap_titulo) %>% summarise(autores=n_distinct(nombre_completo), .groups="drop") %>% arrange(cap_numero) })
-  output$r_plot_aut_cap <- renderPlot({ df<-r_aut_cap(); validate(need(nrow(df)>0,"Sin datos")); ggplot(df, aes(x=factor(cap_numero), y=autores)) + geom_col() + labs(title="Autores por capítulo", x="Capítulo", y="N° autores") + theme_minimal() })
+  r_aut_cap <- reactive({
+    portada_fil() %>%
+      group_by(capitulo_id, cap_numero, cap_titulo) %>%
+      summarise(autores=n_distinct(nombre_completo), .groups="drop") %>%
+      arrange(cap_numero)
+  })
+  output$r_plot_aut_cap <- renderPlot({
+    df<-r_aut_cap(); validate(need(nrow(df)>0,"Sin datos"))
+    ggplot(df, aes(x=factor(cap_numero), y=autores)) +
+      geom_col() + labs(title="Autores por capítulo", x="Capítulo", y="N° autores") +
+      theme_minimal()
+  })
   output$r_tbl_aut_cap <- renderDT({ datatable(r_aut_cap(), rownames=FALSE, options=list(pageLength=10)) })
-  output$r_dl_aut_cap_png <- downloadHandler(filename=function() "autores_por_capitulo.png",
-                                             content=function(file){ df<-r_aut_cap(); validate(need(nrow(df)>0,"Sin datos")); p<-ggplot(df, aes(x=factor(cap_numero), y=autores))+geom_col()+labs(title="Autores por capítulo",x="Capítulo",y="N° autores")+theme_minimal(); ggsave(file,p,width=9,height=5,dpi=150) })
+  output$r_dl_aut_cap_png <- downloadHandler(
+    filename=function() "autores_por_capitulo.png",
+    content=function(file){
+      df<-r_aut_cap(); validate(need(nrow(df)>0,"Sin datos"))
+      p<-ggplot(df, aes(x=factor(cap_numero), y=autores))+
+        geom_col()+labs(title="Autores por capítulo",x="Capítulo",y="N° autores")+
+        theme_minimal()
+      ggsave(file,p,width=9,height=5,dpi=150)
+    })
   output$r_dl_aut_cap_csv <- downloadHandler(filename=function() "autores_por_capitulo.csv", content=function(file) write_csv(r_aut_cap(), file))
   
-  r_aut_caprol <- reactive({ portada_fil() %>% group_by(capitulo_id, cap_numero, cap_titulo, rol) %>% summarise(autores=n_distinct(nombre_completo), .groups="drop") %>% arrange(cap_numero, rol) })
-  output$r_plot_aut_cap_rol <- renderPlot({ df<-r_aut_caprol(); validate(need(nrow(df)>0,"Sin datos")); ggplot(df, aes(x=factor(cap_numero), y=autores, fill=rol))+geom_col(position="stack")+labs(title="Autores por capítulo (apilado por rol)", x="Capítulo", y="N° autores", fill="Rol")+theme_minimal() })
+  r_aut_caprol <- reactive({
+    portada_fil() %>%
+      group_by(capitulo_id, cap_numero, cap_titulo, rol) %>%
+      summarise(autores=n_distinct(nombre_completo), .groups="drop") %>%
+      arrange(cap_numero, rol)
+  })
+  output$r_plot_aut_cap_rol <- renderPlot({
+    df<-r_aut_caprol(); validate(need(nrow(df)>0,"Sin datos"))
+    ggplot(df, aes(x=factor(cap_numero), y=autores, fill=rol))+
+      geom_col(position="stack")+
+      labs(title="Autores por capítulo (apilado por rol)", x="Capítulo", y="N° autores", fill="Rol")+
+      theme_minimal()
+  })
   output$r_tbl_aut_caprol <- renderDT({ datatable(r_aut_caprol(), rownames=FALSE, options=list(pageLength=10)) })
-  output$r_dl_aut_caprol_png <- downloadHandler(filename=function() "autores_por_capitulo_por_rol.png",
-                                                content=function(file){ df<-r_aut_caprol(); validate(need(nrow(df)>0,"Sin datos")); p<-ggplot(df, aes(x=factor(cap_numero), y=autores, fill=rol))+geom_col(position="stack")+labs(title="Autores por capítulo (apilado por rol)", x="Capítulo", y="N° autores", fill="Rol")+theme_minimal(); ggsave(file,p,width=9,height=5,dpi=150) })
+  output$r_dl_aut_caprol_png <- downloadHandler(
+    filename=function() "autores_por_capitulo_por_rol.png",
+    content=function(file){
+      df<-r_aut_caprol(); validate(need(nrow(df)>0,"Sin datos"))
+      p<-ggplot(df, aes(x=factor(cap_numero), y=autores, fill=rol))+
+        geom_col(position="stack")+
+        labs(title="Autores por capítulo (apilado por rol)", x="Capítulo", y="N° autores", fill="Rol")+
+        theme_minimal()
+      ggsave(file,p,width=9,height=5,dpi=150)
+    })
   output$r_dl_aut_caprol_csv <- downloadHandler(filename=function() "autores_por_capitulo_por_rol.csv", content=function(file) write_csv(r_aut_caprol(), file))
   
-  r_avance <- reactive({ avance_fil() %>% mutate(pct_aprob=ifelse(sub_total>0, sub_aprobados/sub_total,0), pct_maquet=ifelse(sub_total>0, sub_maquetados/sub_total,0)) %>% arrange(numero) })
-  output$r_plot_avance <- renderPlot({ df<-r_avance(); validate(need(nrow(df)>0,"Sin datos")); df_long<-pivot_longer(df, cols=c(pct_aprob,pct_maquet), names_to="tipo", values_to="valor"); ggplot(df_long, aes(x=factor(numero), y=valor, fill=tipo))+geom_col(position="dodge")+scale_y_continuous(labels=percent_format())+labs(title="Avance por capítulo", x="Capítulo", y="% de subcapítulos", fill=NULL)+theme_minimal() })
+  r_avance <- reactive({
+    avance_fil() %>%
+      mutate(pct_aprob=ifelse(sub_total>0, sub_aprobados/sub_total,0),
+             pct_maquet=ifelse(sub_total>0, sub_maquetados/sub_total,0)) %>%
+      arrange(numero)
+  })
+  output$r_plot_avance <- renderPlot({
+    df<-r_avance(); validate(need(nrow(df)>0,"Sin datos"))
+    df_long<-pivot_longer(df, cols=c(pct_aprob,pct_maquet), names_to="tipo", values_to="valor")
+    ggplot(df_long, aes(x=factor(numero), y=valor, fill=tipo))+
+      geom_col(position="dodge")+
+      scale_y_continuous(labels=percent_format())+
+      labs(title="Avance por capítulo", x="Capítulo", y="% de subcapítulos", fill=NULL)+
+      theme_minimal()
+  })
   output$r_tbl_avance <- renderDT({ datatable(r_avance(), rownames=FALSE, options=list(pageLength=10)) })
-  output$r_dl_avance_png <- downloadHandler(filename=function() "avance_por_capitulo.png",
-                                            content=function(file){ df<-r_avance(); validate(need(nrow(df)>0,"Sin datos")); df_long<-pivot_longer(df, cols=c(pct_aprob,pct_maquet), names_to="tipo", values_to="valor"); p<-ggplot(df_long, aes(x=factor(numero), y=valor, fill=tipo))+geom_col(position="dodge")+scale_y_continuous(labels=percent_format())+labs(title="Avance por capítulo", x="Capítulo", y="% de subcapítulos", fill=NULL)+theme_minimal(); ggsave(file,p,width=9,height=5,dpi=150) })
+  output$r_dl_avance_png <- downloadHandler(
+    filename=function() "avance_por_capitulo.png",
+    content=function(file){
+      df<-r_avance(); validate(need(nrow(df)>0,"Sin datos"))
+      df_long<-pivot_longer(df, cols=c(pct_aprob,pct_maquet), names_to="tipo", values_to="valor")
+      p<-ggplot(df_long, aes(x=factor(numero), y=valor, fill=tipo))+
+        geom_col(position="dodge")+
+        scale_y_continuous(labels=percent_format())+
+        labs(title="Avance por capítulo", x="Capítulo", y="% de subcapítulos", fill=NULL)+
+        theme_minimal()
+      ggsave(file,p,width=9,height=5,dpi=150)
+    })
   output$r_dl_avance_csv <- downloadHandler(filename=function() "avance_por_capitulo.csv", content=function(file) write_csv(r_avance(), file))
   
-  output$r_plot_gantt <- renderPlot({ df<-fases_fil(); validate(need(nrow(df)>0,"Sin datos")); df$nombre<-factor(df$nombre, levels=rev(df$nombre)); ggplot(df, aes(y=nombre))+geom_segment(aes(x=as.Date(fecha_inicio), xend=as.Date(fecha_fin), yend=nombre), linewidth=3)+scale_x_date(date_breaks="1 month", labels=label_date("%Y-%m"))+labs(title="Cronograma de fases", x="Fecha", y=NULL)+theme_minimal() })
+  output$r_plot_gantt <- renderPlot({
+    df<-fases_fil(); validate(need(nrow(df)>0,"Sin datos"))
+    df$nombre<-factor(df$nombre, levels=rev(df$nombre))
+    ggplot(df, aes(y=nombre))+
+      geom_segment(aes(x=as.Date(fecha_inicio), xend=as.Date(fecha_fin), yend=nombre), linewidth=3)+
+      scale_x_date(date_breaks="1 month", labels=scales::label_date("%Y-%m"))+
+      labs(title="Cronograma de fases", x="Fecha", y=NULL)+
+      theme_minimal()
+  })
   output$r_tbl_fases <- renderDT({ datatable(fases_fil(), rownames=FALSE, options=list(pageLength=12)) })
-  output$r_dl_gantt_png <- downloadHandler(filename=function() "fases_gantt.png",
-                                           content=function(file){ df<-fases_fil(); validate(need(nrow(df)>0,"Sin datos")); df$nombre<-factor(df$nombre, levels=rev(df$nombre)); p<-ggplot(df, aes(y=nombre))+geom_segment(aes(x=as.Date(fecha_inicio), xend=as.Date(fecha_fin), yend=nombre), linewidth=3)+scale_x_date(date_breaks="1 month", labels=label_date("%Y-%m"))+labs(title="Cronograma de fases", x="Fecha", y=NULL)+theme_minimal(); ggsave(file,p,width=10,height=4.5,dpi=150) })
+  output$r_dl_gantt_png <- downloadHandler(
+    filename=function() "fases_gantt.png",
+    content=function(file){
+      df<-fases_fil(); validate(need(nrow(df)>0,"Sin datos"))
+      df$nombre<-factor(df$nombre, levels=rev(df$nombre))
+      p<-ggplot(df, aes(y=nombre))+
+        geom_segment(aes(x=as.Date(fecha_inicio), xend=as.Date(fecha_fin), yend=nombre), linewidth=3)+
+        scale_x_date(date_breaks="1 month", labels=scales::label_date("%Y-%m"))+
+        labs(title="Cronograma de fases", x="Fecha", y=NULL)+
+        theme_minimal()
+      ggsave(file,p,width=10,height=4.5,dpi=150)
+    })
   
   output$r_tbl_sub_preview <- renderDT({ datatable(sub_prev_fil(), rownames=FALSE, options=list(pageLength=15)) })
   output$r_dl_sub_csv <- downloadHandler(filename=function() "autores_por_subcapitulo_preview.csv", content=function(file) write_csv(sub_prev_fil(), file))
