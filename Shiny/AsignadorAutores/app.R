@@ -87,12 +87,9 @@ correo_libre_ui <- function(id){
       bslib::card_header("Redacción y destinatarios"),
       fluidRow(
         column(4,
-               # --- Credencial / remitente ---
                textInput(ns("creds_id"), "ID de credencial (keyring)", "blastula-v1-office365"),
                verbatimTextOutput(ns("cred_info"), placeholder = TRUE),
                textInput(ns("from_email"), "Remitente (debe coincidir con la credencial)", ""),
-               
-               # ---- Contactos desde BD ----
                pickerInput(
                  ns("contactos"), "Contactos (tabla autor)",
                  choices = NULL, multiple = TRUE,
@@ -104,16 +101,11 @@ correo_libre_ui <- function(id){
                  actionButton(ns("add_to_bcc"), "➕ a CCO",  class="btn btn-outline-secondary btn-sm")
                ),
                br(),
-               
-               # ---- Campos libres de destinatarios ----
                textAreaInput(ns("to"),  "Para (uno por línea o separados por ;)", width="100%", height="110px"),
                textAreaInput(ns("cc"),  "CC (opcional)",  width="100%", height="70px"),
                textAreaInput(ns("bcc"), "CCO (opcional)", width="100%", height="70px"),
-               
                textInput(ns("subject"), "Asunto", ""),
                checkboxInput(ns("modo_prueba"), "Modo prueba (guardar HTML en outbox/ y NO enviar)", TRUE),
-               
-               # ---- Adjuntos ----
                fileInput(ns("up_files"), "Subir archivos (adjuntos)", multiple = TRUE,
                          accept = c(
                            "application/pdf","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -149,14 +141,11 @@ Coordinación Libro de Estadística"),
 correo_libre_server <- function(id, con){
   moduleServer(id, function(input, output, session){
     ns <- session$ns
-    
-    # --- carpetas de salida
     app_dir <- normalizePath(getwd())
     outbox  <- file.path(app_dir, "outbox")
     if (!dir.exists(outbox)) dir.create(outbox, recursive = TRUE, showWarnings = FALSE)
     log_file <- file.path(outbox, "sent_log.csv")
     
-    # --- utils
     `%||%` <- function(a,b) if (is.null(a) || (is.atomic(a)&&length(a)==1&&is.na(a))) b else a
     parse_emails <- function(x){
       x <- x %||% ""; if (!nzchar(trimws(x))) return(character(0))
@@ -179,7 +168,6 @@ correo_libre_server <- function(id, con){
       }
     }
     
-    # --- Cargar contactos desde BD (tabla autor)
     get_contactos <- reactive({
       tryCatch(
         DBI::dbGetQuery(con, "SELECT nombre_completo, email FROM autor WHERE email IS NOT NULL AND email <> '' ORDER BY nombre_completo"),
@@ -195,7 +183,6 @@ correo_libre_server <- function(id, con){
     observeEvent(input$add_to_cc,  { s <- input$contactos; if(length(s)) updateTextAreaInput(session,"cc",  value=paste_emails(c(parse_emails(input$cc),  s))) })
     observeEvent(input$add_to_bcc, { s <- input$contactos; if(length(s)) updateTextAreaInput(session,"bcc", value=paste_emails(c(parse_emails(input$bcc), s))) })
     
-    # --- Mostrar info de credencial y prefijar remitente correcto
     cred_user <- reactive({
       id <- input$creds_id %||% ""
       if (!nzchar(id)) return(NA_character_)
@@ -207,13 +194,11 @@ correo_libre_server <- function(id, con){
       u <- cred_user()
       if (is.na(u)) "✗ Credencial NO encontrada."
       else {
-        # Prefija desde credencial si el campo está vacío
         isolate(if (!nzchar(trimws(input$from_email))) updateTextInput(session,"from_email", value = u))
         paste0("✓ Credencial encontrada: '", input$creds_id, "'\nUsuario: ", u)
       }
     })
     
-    # --- PREVIEW
     output$preview_html <- renderUI({
       subj <- input$subject %||% ""
       body <- input$body_md %||% ""
@@ -221,7 +206,6 @@ correo_libre_server <- function(id, con){
                        <h4>Cuerpo</h4><pre style='white-space:pre-wrap'>{htmltools::htmlEscape(body)}</pre>"))
     })
     
-    # --- LOG viewer
     output$tbl_log <- DT::renderDT({
       if (!file.exists(log_file)) return(DT::datatable(data.frame(MENSAJE="Sin registros")))
       df <- tryCatch(read.csv(log_file, fileEncoding="UTF-8"), error=function(e) data.frame(ERROR=e$message))
@@ -229,25 +213,26 @@ correo_libre_server <- function(id, con){
       DT::datatable(df, options=list(pageLength=10, scrollX=TRUE))
     })
     
-    # --- envío
     observeEvent(input$send_btn, {
-      # 0) Validación credencial
       cred_id <- input$creds_id %||% ""
       cu <- cred_user()
       validate(
         need(nzchar(cred_id), "Indica el ID de credencial."),
         need(!is.na(cu),      "No encuentro esa credencial en el keyring.")
       )
-      
-      # 1) Remitente debe coincidir con la credencial (para evitar 501)
       from_addr <- tolower(trimws(input$from_email %||% ""))
       validate(
         need(nzchar(from_addr), "Debes indicar un remitente."),
-        need(identical(from_addr, tolower(cu)),
-             paste0("El remitente debe ser exactamente: ", cu, " (según la credencial)."))
+        need(identical(from_addr, tolower(cu)), paste0("El remitente debe ser exactamente: ", cu, " (según la credencial)."))
       )
       
-      # 2) Destinatarios y asunto
+      parse_emails <- function(x){
+        x <- x %||% ""; if (!nzchar(trimws(x))) return(character(0))
+        y <- unlist(strsplit(x, "[;\n\r]+")); y <- trimws(y); y <- y[nzchar(y)]
+        unique(y)
+      }
+      is_email <- function(z) grepl("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$", z)
+      
       tos  <- parse_emails(input$to);  ccs  <- parse_emails(input$cc);  bccs <- parse_emails(input$bcc)
       validate(need(length(tos) > 0, "Indica al menos un destinatario en 'Para'"))
       bad <- c(tos, ccs, bccs)[!is_email(c(tos, ccs, bccs))]
@@ -255,13 +240,11 @@ correo_libre_server <- function(id, con){
       subj <- input$subject %||% ""; validate(need(nzchar(trimws(subj)), "Debes indicar un Asunto"))
       body <- input$body_md %||% ""
       
-      # 3) Preparar email
       em <- blastula::compose_email(
         body   = blastula::md(body),
         footer = blastula::md(glue::glue("_Enviado · {format(Sys.time(), '%Y-%m-%d %H:%M')}._"))
       )
       
-      # 4) Adjuntos
       if (!is.null(input$up_files) && nrow(input$up_files) > 0) {
         for (i in seq_len(nrow(input$up_files))) {
           path <- input$up_files$datapath[i]
@@ -280,7 +263,6 @@ correo_libre_server <- function(id, con){
         }
       }
       
-      # 5) Log base
       log_row <- data.frame(
         cred_id = cred_id,
         from = from_addr,
@@ -292,7 +274,6 @@ correo_libre_server <- function(id, con){
         resultado = "", detalle = "", stringsAsFactors = FALSE
       )
       
-      # 6) Modo prueba
       if (isTRUE(input$modo_prueba)) {
         fhtml <- file.path(outbox, glue::glue("PREVIEW_{format(Sys.time(), '%Y%m%d_%H%M%S')}.html"))
         ok <- FALSE
@@ -307,7 +288,6 @@ correo_libre_server <- function(id, con){
         return(invisible())
       }
       
-      # 7) Envío real (Office365 con credencial del keyring)
       ok <- FALSE; err_msg <- NULL
       tryCatch(
         {
@@ -398,6 +378,8 @@ ui <- fluidPage(
                        )
               ),
               tabPanel("Equipo del subcapítulo", fluidRow(column(12, DTOutput("tabla_sub_solo")))),
+              
+              # ------------------ AUTORES (CRUD) ------------------
               tabPanel("Autores",
                        fluidRow(
                          column(5,
@@ -424,6 +406,8 @@ ui <- fluidPage(
                          column(7, h4("Autores"), DTOutput("tabla_autores"))
                        )
               ),
+              
+              # ------------------ REPORTES ------------------
               tabPanel("Reportes",
                        fluidRow(
                          column(3,
@@ -452,6 +436,7 @@ ui <- fluidPage(
                          )
                        )
               ),
+              
               tabPanel("Correos (libre)", correo_libre_ui("corr_libre"))
   )
 )
@@ -460,6 +445,8 @@ ui <- fluidPage(
 server <- function(input, output, session){
   con <- get_con()
   onStop(function() try(DBI::dbDisconnect(con), silent = TRUE))
+  
+  `%||%` <- function(x,y) if (is.null(x) || length(x)==0 || is.na(x)) y else x
   
   capitulos <- q(con, "SELECT capitulo_id, numero, titulo FROM capitulo ORDER BY numero")
   autores   <- q(con, "SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
@@ -471,6 +458,7 @@ server <- function(input, output, session){
   updatePickerInput(session,"r_caps",  choices=setNames(capitulos$capitulo_id, paste0("Cap ",capitulos$numero," — ",capitulos$titulo)), selected=capitulos$capitulo_id)
   updatePickerInput(session,"r_roles", choices=setNames(roles_cat$rol_id, roles_cat$nombre), selected=roles_cat$rol_id)
   
+  # --------- TABLAS EQUIPO ----------
   cap_df <- reactive({
     req(input$cap_num)
     q(con, "SELECT c.capitulo_id, a.autor_id, r.rol_id,
@@ -502,6 +490,7 @@ server <- function(input, output, session){
   output$tabla_sub <- renderDT({ datatable(sub_df(), selection="single", rownames=FALSE, options=list(pageLength=10, columnDefs=list(list(visible=FALSE, targets=c(0,1,2))))) })
   output$tabla_sub_solo <- renderDT({ datatable(sub_df(), selection="single", rownames=FALSE, options=list(pageLength=15, columnDefs=list(list(visible=FALSE, targets=c(0,1,2))))) })
   
+  # --------- ALTAS/BAJAS/UPDATES ----------
   observeEvent(input$add_cap, {
     v_cap <- cap_id(con, as.integer(input$cap_num)); v_aut <- as.integer(input$autor); v_rol <- rol_id(con, input$rol)
     v_ord <- if (is.na(input$orden)) NULL else as.integer(input$orden)
@@ -570,7 +559,6 @@ server <- function(input, output, session){
   observeEvent(input$norm_cap, { req(input$cap_num);  normalizar_cap(con, cap_id(con, as.integer(input$cap_num))); showNotification("Orden normalizado en capítulo ✔", type="message") })
   observeEvent(input$norm_sub, { req(input$cap_num, input$sub_num); normalizar_sub(con, sub_id(con, as.integer(input$cap_num), as.integer(input$sub_num))); showNotification("Orden normalizado en subcapítulo ✔", type="message") })
   
-  # descargas
   output$dl_cap_csv <- downloadHandler(filename=function() sprintf("equipo_cap_%s.csv", input$cap_num),
                                        content=function(file) write.csv(cap_df(), file, row.names=FALSE, fileEncoding="UTF-8"))
   output$dl_sub_csv <- downloadHandler(filename=function() sprintf("equipo_cap_%s_sub_%s.csv", input$cap_num, input$sub_num),
@@ -586,7 +574,134 @@ server <- function(input, output, session){
                                           write.csv(df, file, row.names=FALSE, fileEncoding="UTF-8")
                                         })
   
-  # reportes
+  # =========================
+  #       CRUD AUTORES
+  # =========================
+  
+  autores_tbl <- reactiveVal({
+    q(con, "SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo")
+  })
+  output$tabla_autores <- renderDT({
+    datatable(autores_tbl(), selection = "single", rownames = FALSE,
+              options = list(pageLength=12, order=list(list(1,"asc")),
+                             columnDefs=list(list(visible=FALSE, targets=0))))
+  })
+  
+  # ---- Cargar autor robusto (botón y cambio del picker) ----
+  load_autor_by_id <- function(id_sel) {
+    id_num <- suppressWarnings(as.integer(id_sel))
+    if (is.na(id_num)) { showNotification("Selección inválida (id no numérico).", type="error"); return(invisible()) }
+    a <- q(con, "SELECT * FROM autor WHERE autor_id=?", params=list(id_num))
+    if (!nrow(a)) { showNotification("No se encontró el autor seleccionado.", type="error"); return(invisible()) }
+    updateTextInput(session, "a_nombre",       value = a$nombre_completo[1] %||% "")
+    updateTextInput(session, "a_email",        value = a$email[1]            %||% "")
+    updateTextInput(session, "a_pais_ciudad",  value = a$pais_ciudad[1]      %||% "")
+    updateTextInput(session, "a_institucion",  value = a$institucion[1]      %||% "")
+    updateTextInput(session, "a_cargo",        value = a$cargo[1]            %||% "")
+    updateTextInput(session, "a_orcid",        value = a$orcid[1]            %||% "")
+    updateTextInput(session, "a_telefono",     value = a$telefono[1]         %||% "")
+    showNotification("Autor cargado ✔", type="message")
+  }
+  observeEvent(input$autor_load, { req(input$autor_pick); load_autor_by_id(input$autor_pick) }, ignoreInit = TRUE)
+  observeEvent(input$autor_pick, {
+    if (!is.null(input$autor_pick) && nzchar(input$autor_pick)) load_autor_by_id(input$autor_pick)
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$autor_clear, {
+    updateTextInput(session, "a_nombre",      value = "")
+    updateTextInput(session, "a_email",       value = "")
+    updateTextInput(session, "a_pais_ciudad", value = "")
+    updateTextInput(session, "a_institucion", value = "")
+    updateTextInput(session, "a_cargo",       value = "")
+    updateTextInput(session, "a_orcid",       value = "")
+    updateTextInput(session, "a_telefono",    value = "")
+    updatePickerInput(session, "autor_pick", selected = character(0))
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$autor_new, {
+    validate(
+      need(nchar(trimws(input$a_nombre))>0, "Nombre requerido"),
+      need(nchar(trimws(input$a_email))>0,  "Email requerido")
+    )
+    foto_blob <- NULL; mime <- NA_character_; fname <- NA_character_; nbytes <- NA_integer_
+    if (!is.null(input$a_foto)) {
+      f <- input$a_foto
+      bin <- readBin(f$datapath, what="raw", n = file.info(f$datapath)$size)
+      foto_blob <- list(bin)
+      mime   <- f$type
+      fname  <- f$name
+      nbytes <- length(bin)
+    }
+    sql <- "INSERT INTO autor
+            (nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono,
+             foto, foto_mime, foto_nombre, foto_bytes, foto_fecha)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?, NOW())"
+    exec(con, sql,
+         params = list(
+           input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion,
+           input$a_cargo, input$a_orcid, input$a_telefono,
+           foto_blob, mime, fname, nbytes
+         ))
+    autores_tbl(q(con, "SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo"))
+    autores <- q(con, "SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
+    updatePickerInput(session, "autor",      choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    updatePickerInput(session, "autor_pick", choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    showNotification("Autor creado ✔", type="message")
+  })
+  
+  observeEvent(input$autor_save, {
+    req(input$autor_pick)
+    validate(need(nchar(trimws(input$a_nombre))>0, "Nombre requerido"),
+             need(nchar(trimws(input$a_email))>0,  "Email requerido"))
+    foto_blob <- NULL; mime <- NULL; fname <- NULL; nbytes <- NULL
+    set_foto  <- ""
+    if (!is.null(input$a_foto)) {
+      f <- input$a_foto
+      bin <- readBin(f$datapath, what="raw", n = file.info(f$datapath)$size)
+      foto_blob <- list(bin)
+      mime   <- f$type
+      fname  <- f$name
+      nbytes <- length(bin)
+      set_foto <- ", foto=?, foto_mime=?, foto_nombre=?, foto_bytes=?, foto_fecha=NOW()"
+    }
+    sql <- paste0(
+      "UPDATE autor SET
+         nombre_completo=?, email=?, pais_ciudad=?, institucion=?,
+         cargo=?, orcid=?, telefono=?",
+      set_foto,
+      " WHERE autor_id=?"
+    )
+    params <- list(
+      input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion,
+      input$a_cargo, input$a_orcid, input$a_telefono
+    )
+    if (set_foto!="") params <- c(params, list(foto_blob, mime, fname, nbytes))
+    params <- c(params, list(as.integer(input$autor_pick)))
+    exec(con, sql, params = params)
+    
+    autores_tbl(q(con, "SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo"))
+    autores <- q(con, "SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
+    updatePickerInput(session, "autor",      choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    updatePickerInput(session, "autor_pick", choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    showNotification("Autor guardado ✔", type="warning")
+  })
+  
+  observeEvent(input$autor_del, {
+    req(input$autor_pick)
+    ref1 <- q(con,"SELECT COUNT(*) n FROM capitulo_autor    WHERE autor_id=?", params=list(as.integer(input$autor_pick)))$n[1]
+    ref2 <- q(con,"SELECT COUNT(*) n FROM subcapitulo_autor WHERE autor_id=?", params=list(as.integer(input$autor_pick)))$n[1]
+    if ((ref1+ref2)>0) {
+      showNotification("No se puede eliminar: el autor tiene asignaciones.", type="error"); return(NULL)
+    }
+    exec(con,"DELETE FROM autor WHERE autor_id=?", params=list(as.integer(input$autor_pick)))
+    autores_tbl(q(con, "SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo"))
+    autores <- q(con, "SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
+    updatePickerInput(session, "autor",      choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    updatePickerInput(session, "autor_pick", choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    showNotification("Autor eliminado ✔", type="message")
+  })
+  
+  # ------------------ REPORTES ------------------
   get_portada <- reactive({
     q(con,"SELECT c.capitulo_id, c.numero AS cap_numero, c.titulo AS cap_titulo,
                  a.autor_id, a.nombre_completo, r.rol_id, r.nombre AS rol, ca.orden
