@@ -1,0 +1,2 @@
+accion_id,riesgo_id,titulo,responsable,estado,fecha_compromiso,semaforo
+2,2,Retraso de entregables críticos,Coordinación Editorial,Pendiente,2025-09-14,Por vencer (≤7 días)

@@ -1,0 +1,2 @@
+evento_id,riesgo_id,tipo,detalle,fecha_evento
+2,2,Actualizacion,Se habilita etiqueta PRIORIDAD-ALTA en PRs,2025-09-09T00:00:00Z
