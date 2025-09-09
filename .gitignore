@@ -69,3 +69,6 @@ Shiny/Correos/outbox/
 automate/*.zip
 automate/*.json
 
+# ===== Carpeta prelifght=====
+
+/preflight/
