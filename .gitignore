@@ -38,8 +38,11 @@ vignettes/*.pdf
 # ===== Variables de entorno de R =====
 .Renviron
 
-# ===== Carpeta de sitio pkgdown =====
-docs/
+# ===== Carpeta de sitio pkgdown / docs =====
+!docs/
+docs/**.log
+docs/**.tmp
+docs/**/.DS_Store
 
 # ===== Archivos temporales de traducción =====
 po/*~
@@ -58,7 +61,6 @@ Shiny/Correos/outbox/
 
 # Archivos temporales de Excel (cuando Excel crea copias locales)
 ~$*.xlsx
-
 
 # ===== Archivos temporales de Power BI =====
 *.pbix~
