@@ -1,5 +1,5 @@
 # ======================================================
-# app.R — Libro de Estadística (limpio, completo)
+# app.R — Libro de Estadística (completo y limpio)
 # ======================================================
 
 # --- Credenciales MySQL (ajusta si hace falta) ---
@@ -31,34 +31,17 @@ get_con <- function(){
     bigint = "integer"
   )
 }
+q    <- function(con, sql, ...)  tryCatch(DBI::dbGetQuery(con, sql, ...), error=function(e){ warning(e$message); tibble() })
+exec <- function(con, sql, ...) tryCatch(DBI::dbExecute(con, sql, ...),  error=function(e){ warning(e$message); -1 })
 
-q <- function(con, sql, ...) {
-  tryCatch(DBI::dbGetQuery(con, sql, ...),
-           error = function(e){ warning(e$message); tibble() })
-}
-exec <- function(con, sql, ...) {
-  tryCatch(DBI::dbExecute(con, sql, ...),
-           error = function(e){ warning(e$message); -1L })
-}
-
-rol_id <- function(con, rol_txt){
-  df <- q(con,"SELECT rol_id FROM rol WHERE nombre=?", params=list(rol_txt))
-  if (nrow(df)==1) df$rol_id[1] else NA_integer_
-}
-cap_id <- function(con, num){
-  df <- q(con,"SELECT capitulo_id FROM capitulo WHERE numero=?", params=list(num))
-  if (nrow(df)==1) df$capitulo_id[1] else NA_integer_
-}
+rol_id <- function(con, rol_txt){ df <- q(con,"SELECT rol_id FROM rol WHERE nombre=?", params=list(rol_txt)); if (nrow(df)==1) df$rol_id[1] else NA_integer_ }
+cap_id <- function(con, num){ df <- q(con,"SELECT capitulo_id FROM capitulo WHERE numero=?", params=list(num)); if (nrow(df)==1) df$capitulo_id[1] else NA_integer_ }
 sub_id <- function(con, num_cap, num_sub){
   df <- q(con,"SELECT sc.subcapitulo_id FROM subcapitulo sc JOIN capitulo c ON c.capitulo_id=sc.capitulo_id WHERE c.numero=? AND sc.numero=?", params=list(num_cap,num_sub))
   if (nrow(df)==1) df$subcapitulo_id[1] else NA_integer_
 }
-tiene_principal_cap <- function(con, cap){
-  q(con,"SELECT COUNT(*) n FROM capitulo_autor WHERE capitulo_id=? AND rol_id=1", params=list(cap))$n[1] > 0
-}
-tiene_principal_sub <- function(con, sub){
-  q(con,"SELECT COUNT(*) n FROM subcapitulo_autor WHERE subcapitulo_id=? AND rol_id=1", params=list(sub))$n[1] > 0
-}
+tiene_principal_cap <- function(con, cap){ q(con,"SELECT COUNT(*) n FROM capitulo_autor WHERE capitulo_id=? AND rol_id=1", params=list(cap))$n[1] > 0 }
+tiene_principal_sub <- function(con, sub){ q(con,"SELECT COUNT(*) n FROM subcapitulo_autor WHERE subcapitulo_id=? AND rol_id=1", params=list(sub))$n[1] > 0 }
 
 normalizar_cap <- function(con, cap){
   exec(con,"DROP TEMPORARY TABLE IF EXISTS tmp_orden_cap")
@@ -280,7 +263,9 @@ ui <- fluidPage(
                          )
                        )
               ),
+              
               tabPanel("Equipo del subcapítulo", fluidRow(column(12, DTOutput("tabla_sub_solo")))),
+              
               tabPanel("Autores",
                        fluidRow(
                          column(5,
@@ -306,6 +291,7 @@ ui <- fluidPage(
                          column(7, h4("Autores"), DTOutput("tabla_autores"))
                        )
               ),
+              
               tabPanel("Reportes",
                        fluidRow(
                          column(3,
@@ -330,6 +316,7 @@ ui <- fluidPage(
                                             tabPanel("Gantt de fases", br(), plotOutput("r_plot_gantt",height=350),
                                                      downloadButton("r_dl_gantt_png","PNG",class="btn-primary"), DTOutput("r_tbl_fases")),
                                             tabPanel("Subcapítulos (muestra)", br(), DTOutput("r_tbl_sub_preview")),
+                                            # --- NUEVO: Reporte PDF Capítulo + autores ---
                                             tabPanel("Capítulo + autores (PDF)",
                                                      br(),
                                                      div(class="d-flex gap-2 flex-wrap",
@@ -338,6 +325,7 @@ ui <- fluidPage(
                                                      ),
                                                      br(), DTOutput("cap_aut_tbl")
                                             ),
+                                            # --- Riesgos PMP (se conserva) ---
                                             tabPanel("Riesgos PMP",
                                                      uiOutput("pmp_conn_status"),
                                                      fluidRow(
@@ -364,6 +352,7 @@ ui <- fluidPage(
                          )
                        )
               ),
+              
               tabPanel("Correos (libre)", correo_libre_ui("corr_libre"))
   )
 )
@@ -373,6 +362,8 @@ server <- function(input, output, session){
   con <- get_con()
   onStop(function() try(DBI::dbDisconnect(con), silent=TRUE))
   `%||%` <- function(x,y) if (is.null(x) || length(x)==0 || is.na(x)) y else x
+  
+  # Evita truncar coautores largos
   try(exec(con, "SET SESSION group_concat_max_len = 32768"), silent = TRUE)
   
   capitulos <- q(con,"SELECT capitulo_id, numero, titulo FROM capitulo ORDER BY numero")
@@ -473,111 +464,49 @@ server <- function(input, output, session){
   }
   observeEvent(input$autor_load,{ req(input$autor_pick); load_autor_by_id(input$autor_pick) }, ignoreInit=TRUE)
   observeEvent(input$autor_pick,{ if (!is.null(input$autor_pick) && nzchar(input$autor_pick)) load_autor_by_id(input$autor_pick) }, ignoreInit=TRUE)
-  observeEvent(input$autor_clear,{ updateTextInput(session,"a_nombre",value=""); updateTextInput(session,"a_email",value=""); updateTextInput(session,"a_pais_ciudad",value=""); updateTextInput(session,"a_institucion",value=""); updateTextInput(session,"a_cargo",value=""); updateTextInput(session,"a_orcid",value=""); updateTextInput(session,"a_telefono",value=""); updatePickerInput(session,"autor_pick",selected=character(0)); shinyjs::reset("a_foto") }, ignoreInit=TRUE)
-  
-  # ====== CREAR AUTOR (limpio, con guard y NULL literales) ======
-  observeEvent(input$autor_new, {
-    # 1) Guard: no permitir crear si hay un autor seleccionado
-    if (!is.null(input$autor_pick) && nzchar(input$autor_pick)) {
-      showModal(modalDialog(
-        title = "No se puede crear aún",
-        "Tienes un autor seleccionado. Presiona 'Limpiar' para borrar el formulario y poder crear un nuevo registro.",
-        easyClose = TRUE, footer = modalButton("Entendido")
-      ))
-      return(invisible())
-    }
-    
-    # 2) Validaciones mínimas
-    validate(
-      need(nchar(trimws(input$a_nombre)) > 0, "Nombre requerido"),
-      need(nchar(trimws(input$a_email))  > 0, "Email requerido")
-    )
-    
-    # 3) Detectar si la tabla tiene columnas de foto
-    cols <- tryCatch(DBI::dbListFields(con, "autor"), error = function(e) character(0))
-    has_blob <- all(c("foto","foto_mime","foto_nombre","foto_bytes","foto_fecha") %in% cols)
-    
-    # 4) Preparar archivo (si hay)
-    foto_blob <- NULL; mime <- NA_character_; fname <- NA_character_; nbytes <- NA_integer_; with_blob <- FALSE
-    if (!is.null(input$a_foto) && has_blob) {
-      size <- suppressWarnings(file.info(input$a_foto$datapath)$size)
-      if (is.finite(size) && size > 0) {
-        bin <- readBin(input$a_foto$datapath, what = "raw", n = size)
-        foto_blob <- list(bin)
-        mime      <- input$a_foto$type
-        fname     <- input$a_foto$name
-        nbytes    <- as.integer(length(bin))
-        with_blob <- TRUE
-      }
-    }
-    
-    # 5) Armar SQL + params (sin pasar 'NULL' como string)
-    if (has_blob && with_blob) {
-      sql <- paste(
-        "INSERT INTO autor",
-        "(nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono,",
-        " foto, foto_mime, foto_nombre, foto_bytes, foto_fecha)",
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?, NOW())"
-      )
-      params <- list(
-        input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion,
-        input$a_cargo,  input$a_orcid, input$a_telefono,
-        foto_blob, mime, fname, nbytes
-      )
-    } else if (has_blob && !with_blob) {
-      sql <- paste(
-        "INSERT INTO autor",
-        "(nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono,",
-        " foto, foto_mime, foto_nombre, foto_bytes, foto_fecha)",
-        "VALUES (?,?,?,?,?,?,?, NULL, NULL, NULL, NULL, NULL)"
-      )
-      params <- list(
-        input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion,
-        input$a_cargo,  input$a_orcid, input$a_telefono
-      )
-    } else {
-      sql <- paste(
-        "INSERT INTO autor",
-        "(nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono)",
-        "VALUES (?,?,?,?,?,?,?)"
-      )
-      params <- list(
-        input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion,
-        input$a_cargo,  input$a_orcid, input$a_telefono
-      )
-    }
-    
-    # 6) Ejecutar INSERT
-    res <- tryCatch(DBI::dbExecute(con, sql, params = params), error = function(e) e)
-    if (inherits(res, "error")) {
-      msg <- conditionMessage(res)
-      if (grepl("Duplicate entry|1062", msg, ignore.case = TRUE)) {
-        showNotification("❌ No se pudo crear: el email ya existe.", type = "error", duration = 8)
-      } else {
-        showNotification(paste("❌ Error al crear autor:", msg), type = "error", duration = 8)
-      }
-      return(invisible())
-    }
-    
-    # 7) Refrescar tablas y selects
+  observeEvent(input$autor_clear,{ updateTextInput(session,"a_nombre",value=""); updateTextInput(session,"a_email",value=""); updateTextInput(session,"a_pais_ciudad",value=""); updateTextInput(session,"a_institucion",value=""); updateTextInput(session,"a_cargo",value=""); updateTextInput(session,"a_orcid",value=""); updateTextInput(session,"a_telefono",value=""); updatePickerInput(session,"autor_pick",selected=character(0)) }, ignoreInit=TRUE)
+  observeEvent(input$autor_new,{
+    validate(need(nchar(trimws(input$a_nombre))>0,"Nombre requerido"), need(nchar(trimws(input$a_email))>0,"Email requerido"))
+    foto_blob <- NULL; mime <- NA_character_; fname <- NA_character_; nbytes <- NA_integer_
+    if (!is.null(input$a_foto)) { f <- input$a_foto; bin <- readBin(f$datapath, what="raw", n = file.info(f$datapath)$size); foto_blob <- list(bin); mime <- f$type; fname <- f$name; nbytes <- length(bin) }
+    sql <- "INSERT INTO autor (nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono, foto, foto_mime, foto_nombre, foto_bytes, foto_fecha) VALUES (?,?,?,?,?,?,?,?,?,?,?, NOW())"
+    exec(con, sql, params=list(input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion, input$a_cargo, input$a_orcid, input$a_telefono, foto_blob, mime, fname, nbytes))
     autores_tbl(q(con,"SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo"))
     autores <- q(con,"SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
-    updatePickerInput(session,"autor",      choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
-    updatePickerInput(session,"autor_pick", choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
-    
-    # 8) Limpiar formulario para nuevo ingreso
-    updateTextInput(session, "a_nombre",      value = "")
-    updateTextInput(session, "a_email",       value = "")
-    updateTextInput(session, "a_pais_ciudad", value = "")
-    updateTextInput(session, "a_institucion", value = "")
-    updateTextInput(session, "a_cargo",       value = "")
-    updateTextInput(session, "a_orcid",       value = "")
-    updateTextInput(session, "a_telefono",    value = "")
-    updatePickerInput(session, "autor_pick",  selected = character(0))
-    shinyjs::reset("a_foto")
-    shinyjs::runjs("$('#a_nombre').trigger('focus');")
-    
-    showNotification("✅ Autor creado. Formulario listo para un nuevo registro.", type = "message")
+    updatePickerInput(session,"autor", choices=setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    updatePickerInput(session,"autor_pick", choices=setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    showNotification("Autor creado ✔", type="message")
+  })
+  observeEvent(input$autor_save,{
+    req(input$autor_pick)
+    validate(need(nchar(trimws(input$a_nombre))>0,"Nombre requerido"), need(nchar(trimws(input$a_email))>0,"Email requerido"))
+    set_foto <- ""; foto_blob <- NULL; mime <- NULL; fname <- NULL; nbytes <- NULL
+    if (!is.null(input$a_foto)) {
+      f <- input$a_foto; bin <- readBin(f$datapath, what="raw", n = file.info(f$datapath)$size)
+      foto_blob <- list(bin); mime <- f$type; fname <- f$name; nbytes <- length(bin); set_foto <- ", foto=?, foto_mime=?, foto_nombre=?, foto_bytes=?, foto_fecha=NOW()"
+    }
+    sql <- paste0("UPDATE autor SET nombre_completo=?, email=?, pais_ciudad=?, institucion=?, cargo=?, orcid=?, telefono=?", set_foto, " WHERE autor_id=?")
+    params <- list(input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion, input$a_cargo, input$a_orcid, input$a_telefono)
+    if (set_foto!="") params <- c(params, list(foto_blob, mime, fname, nbytes))
+    params <- c(params, list(as.integer(input$autor_pick)))
+    exec(con, sql, params=params)
+    autores_tbl(q(con,"SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo"))
+    autores <- q(con,"SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
+    updatePickerInput(session,"autor", choices=setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    updatePickerInput(session,"autor_pick", choices=setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    showNotification("Autor guardado ✔", type="warning")
+  })
+  observeEvent(input$autor_del,{
+    req(input$autor_pick)
+    ref1 <- q(con,"SELECT COUNT(*) n FROM capitulo_autor WHERE autor_id=?", params=list(as.integer(input$autor_pick)))$n[1]
+    ref2 <- q(con,"SELECT COUNT(*) n FROM subcapitulo_autor WHERE autor_id=?", params=list(as.integer(input$autor_pick)))$n[1]
+    if ((ref1+ref2)>0) { showNotification("No se puede eliminar: el autor tiene asignaciones.", type="error"); return(NULL) }
+    exec(con,"DELETE FROM autor WHERE autor_id=?", params=list(as.integer(input$autor_pick)))
+    autores_tbl(q(con,"SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo"))
+    autores <- q(con,"SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
+    updatePickerInput(session,"autor", choices=setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    updatePickerInput(session,"autor_pick", choices=setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
+    showNotification("Autor eliminado ✔", type="message")
   })
   
   # ------------------ REPORTES base ------------------
@@ -670,7 +599,7 @@ server <- function(input, output, session){
   output$r_tbl_sub_preview <- renderDT({ datatable(sub_prev_fil(), rownames=FALSE, options=list(pageLength=15)) })
   output$r_dl_sub_csv <- downloadHandler(filename=function() "autores_por_subcapitulo_preview.csv", content=function(file) write_csv(sub_prev_fil(), file))
   
-  # ----------- Reporte Capítulo + autor principal + coautores -----------
+  # ----------- NUEVO: Reporte Capítulo + autor principal + coautores -----------
   cap_aut_data <- reactive({
     co_id <- rol_id(con, "Coautor"); if (is.na(co_id)) co_id <- 2L
     df <- q(con, "
@@ -707,6 +636,7 @@ server <- function(input, output, session){
     }
   )
   make_cap_aut_pdf <- function(tabla, out_pdf){
+    # 1) LaTeX (si tinytex/LaTeX disponible)
     rmd <- tempfile(fileext=".Rmd")
     writeLines(con=rmd, text=paste0(
       "---\n",
@@ -728,6 +658,7 @@ server <- function(input, output, session){
                             params=list(tabla=tabla), envir=new.env(parent=globalenv()), quiet=TRUE), silent=TRUE)
       if (file.exists(out_pdf)) return(invisible(TRUE))
     }
+    # 2) Fallback: HTML + pagedown::chrome_print
     if (requireNamespace("pagedown", quietly = TRUE)) {
       html_rmd <- tempfile(fileext=".Rmd")
       writeLines(con=html_rmd, text=paste0(
@@ -830,7 +761,7 @@ server <- function(input, output, session){
       div(class="well", h4("Leyenda rápida — Autores"),
           tags$ul(tags$li(strong("Escoger autor + Cargar selección:")," llena el formulario."),
                   tags$li(strong("Crear/Guardar/Eliminar:")," gestiona el registro del autor."),
-                  tags$li(strong("Foto:")," se almacena como BLOB con su metadata (si el esquema lo permite).")))
+                  tags$li(strong("Foto:")," se almacena como BLOB con su metadata.")))
     } else if (tab == "Reportes") {
       div(class="well", h4("Leyenda rápida — Reportes"),
           tags$ul(tags$li(strong("Filtros:")," capítulos, roles y rango de fechas."),
