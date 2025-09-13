@@ -146,5 +146,7 @@ Este repositorio documenta el modelo relacional para un sistema de gestión de c
 
 ---
 
+## 13/09/2025 Se cambia de directorio
+
 ## 📄 Licencia
 Este modelo puede ser reutilizado y adaptado bajo licencia MIT.
