@@ -567,7 +567,7 @@ pmp_server <- function(id, con){
   })
 }
 
-# ================== MODULO PMP (UNIFICADO) ==================
+# ================== MODULO PMP (con RACI) ==================
 pmp_ui <- function(id){
   ns <- NS(id)
   tagList(
@@ -590,23 +590,93 @@ pmp_ui <- function(id){
       
       tabPanel("Riesgos",
                br(),
-               bslib::card(bslib::card_header("Resumen por prioridad"), DTOutput(ns("tbl_prior"))),
+               bslib::card(
+                 bslib::card_header("Filtros"),
+                 fluidRow(
+                   column(4, selectizeInput(ns("f_resp"), "Responsable", choices = NULL, multiple = TRUE,
+                                            options=list(placeholder="Todos"))),
+                   column(4, pickerInput(ns("f_estado"), "Semáforo / Estado",
+                                         choices=c("Vencida","Por vencer (≤7 días)","En curso","Cerrada"),
+                                         multiple=TRUE, options=list(`actions-box`=TRUE))),
+                   column(4, dateRangeInput(ns("f_fecha"), "Rango fecha compromiso", start=NA, end=NA))
+                 )
+               ),
                br(),
-               bslib::card(bslib::card_header("Acciones (semáforo)"),   DTOutput(ns("tbl_acc")))
-      ),
-      
-      tabPanel("Gantt",
-               br(),
-               bslib::card(bslib::card_header("Cronograma de fases (si existe)"),
-                           plotOutput(ns("plot_gantt_fases"), height=380),
-                           DTOutput(ns("tbl_fases"))
+               fluidRow(
+                 column(5, bslib::card(bslib::card_header("Resumen por prioridad"), DTOutput(ns("tbl_prior")))),
+                 column(7, bslib::card(bslib::card_header("Acciones (filtradas)"),   DTOutput(ns("tbl_acc"))))
                )
       ),
       
       tabPanel("Entregables",
                br(),
-               bslib::card(bslib::card_header("Entregables (lectura)"),
+               bslib::card(
+                 bslib::card_header("Filtros de entregables"),
+                 fluidRow(
+                   column(4, selectizeInput(ns("e_resp"), "Responsable", choices=NULL, multiple=TRUE,
+                                            options=list(placeholder="Todos"))),
+                   column(4, pickerInput(ns("e_estado"), "Estado",
+                                         choices=c("Pendiente","En curso","Entregado","Aprobado","Rechazado"),
+                                         multiple=TRUE, options=list(`actions-box`=TRUE))),
+                   column(4, dateRangeInput(ns("e_rango"), "Rango de compromiso", start=NA, end=NA))
+                 )
+               ),
+               br(),
+               fluidRow(
+                 column(6,
+                        bslib::value_box(title="Pendientes", value=htmlOutput(ns("kpi_e_pend")), theme_color="indigo"),
+                        bslib::value_box(title="En curso",   value=htmlOutput(ns("kpi_e_curso")), theme_color="teal")
+                 ),
+                 column(6,
+                        bslib::value_box(title="Entregados", value=htmlOutput(ns("kpi_e_ent")), theme_color="green"),
+                        bslib::value_box(title="Aprobados",  value=htmlOutput(ns("kpi_e_aprob")), theme_color="blue")
+                 )
+               ),
+               br(),
+               bslib::card(bslib::card_header("Listado (filtrado)"),
                            DTOutput(ns("tbl_ent"))
+               ),
+               br(),
+               bslib::card(bslib::card_header("Gantt de entregables"),
+                           plotOutput(ns("plot_gantt_ent"), height=380),
+                           div(class="d-flex gap-2 flex-wrap",
+                               downloadButton(ns("dl_ent_csv"),  "CSV (filtrado)"),
+                               downloadButton(ns("dl_ent_png"),  "PNG Gantt"),
+                               downloadButton(ns("dl_ent_pdf"),  "PDF Gantt")
+                           )
+               )
+      ),
+      
+      # -------- NUEVA PESTAÑA: RACI --------
+      tabPanel("RACI",
+               br(),
+               bslib::card(
+                 bslib::card_header("Matriz RACI (solo lectura)"),
+                 fluidRow(
+                   column(6, textInput(ns("raci_busca"), "Buscar entregable", "")),
+                   column(6, helpText("Se arma desde v_raci / raci / entregable_responsable (lo que exista)."))
+                 ),
+                 DTOutput(ns("tbl_raci")),
+                 br(),
+                 div(class="d-flex gap-2 flex-wrap",
+                     downloadButton(ns("dl_raci_csv"), "RACI (CSV)"),
+                     downloadButton(ns("dl_raci_pdf"), "RACI (PDF)")
+                 )
+               )
+      ),
+      
+      tabPanel("Stakeholders",
+               br(),
+               bslib::card(bslib::card_header("Mapa de interesados (solo lectura)"),
+                           DTOutput(ns("tbl_stake"))
+               )
+      ),
+      
+      tabPanel("Gantt",
+               br(),
+               bslib::card(bslib::card_header("Cronograma de fases"),
+                           plotOutput(ns("plot_gantt_fases"), height=380),
+                           DTOutput(ns("tbl_fases"))
                )
       ),
       
@@ -617,15 +687,403 @@ pmp_ui <- function(id){
                  textInput(ns("rep_name"), "Nombre base", value=paste0("reporte_riesgos_", format(Sys.Date(), "%Y-%m-%d"))),
                  checkboxInput(ns("snap_csv"), "Guardar snapshots CSV (prioridades/acciones/eventos)", TRUE),
                  div(class="d-flex gap-3 flex-wrap",
-                     downloadButton(ns("dl_md"),  "Descargar .md"),
-                     downloadButton(ns("dl_pdf"), "Descargar PDF")
-                 ),
-                 br(),
-                 helpText("Solo lectura: se basan en las vistas v_riesgo_registro / v_riesgo_acciones / v_riesgo_heatmap y tabla riesgo_evento.")
+                     downloadButton(ns("dl_exec_pdf"), "Reporte ejecutivo (PDF)"),
+                     downloadButton(ns("dl_pdf"),      "Reporte completo (PDF)"),
+                     downloadButton(ns("dl_md"),       "Descargar .md"),
+                     downloadButton(ns("dl_acc_fil_csv"), "Acciones filtradas (CSV)"),
+                     downloadButton(ns("dl_prior_csv"),   "Prioridades (CSV)"),
+                     downloadButton(ns("dl_evt_csv"),     "Eventos (CSV)"),
+                     downloadButton(ns("dl_heat_png"),    "Heatmap (PNG)")
+                 )
                )
       )
     )
   )
+}
+
+pmp_server <- function(id, con){
+  moduleServer(id, function(input, output, session){
+    ns <- session$ns
+    `%||%` <- function(x,y) if (is.null(x) || length(x)==0 || is.na(x)) y else x
+    qsafe <- function(sql) tryCatch(DBI::dbGetQuery(con, sql), error=function(e){ warning(e$message); data.frame() })
+    qtry_first <- function(sqls){
+      for (s in sqls){ df <- qsafe(s); if (nrow(df)) return(df) }
+      data.frame()
+    }
+    
+    # Estado conexión
+    output$conn_status <- renderUI({
+      ok <- TRUE; tryCatch(DBI::dbGetQuery(con,"SELECT 1"), error=function(e) ok <<- FALSE)
+      if (isTRUE(ok)) div(class="alert alert-success","Conexión MySQL OK.") else div(class="alert alert-danger","Sin conexión MySQL.")
+    })
+    
+    # --- Datos base existentes ---
+    prior <- reactive({ qsafe("SELECT prioridad, COUNT(*) AS total FROM v_riesgo_registro GROUP BY prioridad") })
+    acc   <- reactive({ qsafe("SELECT accion_id, riesgo_id, titulo, responsable, estado, fecha_compromiso, semaforo FROM v_riesgo_acciones ORDER BY FIELD(semaforo,'Vencida','Por vencer (≤7 días)','En curso','Cerrada'), fecha_compromiso") })
+    heat  <- reactive({ qsafe("SELECT prob_nivel, imp_nivel, prioridad, color_hex FROM v_riesgo_heatmap") })
+    evt   <- reactive({ qsafe("SELECT evento_id, riesgo_id, tipo, detalle, fecha_evento FROM riesgo_evento ORDER BY evento_id DESC LIMIT 50") })
+    fases <- reactive({ qsafe("SELECT fase_id, nombre, fecha_inicio, fecha_fin FROM fase ORDER BY fase_id") })
+    
+    # Entregables
+    entregables_raw <- reactive({
+      qtry_first(c(
+        "SELECT e.entregable_id, CAST(e.nombre AS CHAR(255)) AS nombre, e.estado, e.fecha_compromiso, e.fecha_entrega, e.version, e.url_repositorio, a.nombre_completo AS responsable
+         FROM entregable e LEFT JOIN autor a ON a.autor_id=e.responsable_id ORDER BY e.entregable_id DESC",
+        "SELECT * FROM entregable ORDER BY 1 DESC"
+      ))
+    })
+    
+    # Stakeholders (si existe)
+    stakeholders <- reactive({
+      qtry_first(c(
+        "SELECT stakeholder_id, nombre, rol, organizacion, email, telefono, influencia, interes, estrategia
+         FROM stakeholder ORDER BY nombre",
+        "SELECT * FROM stakeholder ORDER BY 1"
+      ))
+    })
+    
+    # KPIs tablero
+    output$kpi_ext  <- renderText({ df<-prior(); n<-df %>% dplyr::filter(prioridad %in% c("Extreme","Crítica","Critica")) %>% summarise(n=sum(total,na.rm=TRUE)) %>% dplyr::pull(n); format(n %||% 0) })
+    output$kpi_high <- renderText({ df<-prior(); n<-df %>% dplyr::filter(prioridad %in% c("High","Alta")) %>% summarise(n=sum(total,na.rm=TRUE)) %>% dplyr::pull(n); format(n %||% 0) })
+    output$kpi_mid  <- renderText({ df<-prior(); n<-df %>% dplyr::filter(prioridad %in% c("Medium","Media")) %>% summarise(n=sum(total,na.rm=TRUE)) %>% dplyr::pull(n); format(n %||% 0) })
+    output$kpi_low  <- renderText({ df<-prior(); n<-df %>% dplyr::filter(prioridad %in% c("Low","Baja")) %>% summarise(n=sum(total,na.rm=TRUE)) %>% dplyr::pull(n); format(n %||% 0) })
+    
+    output$heatmap <- renderPlot({
+      h <- heat(); validate(need(nrow(h)>0,"Sin datos (v_riesgo_heatmap)."))
+      ggplot(h, aes(x=factor(prob_nivel), y=factor(imp_nivel), fill=color_hex)) +
+        geom_tile(color="grey90") + scale_fill_identity() +
+        labs(x="Probabilidad", y="Impacto") + theme_minimal(base_size = 14)
+    })
+    output$tbl_evt <- DT::renderDT({
+      e <- evt(); if (nrow(e)) e$fecha_evento <- as.Date(e$fecha_evento)
+      DT::datatable(e, options=list(pageLength=10, scrollX=TRUE), rownames=FALSE)
+    })
+    
+    # ====== RIESGOS ======
+    observe({
+      a <- acc()
+      updateSelectizeInput(session, "f_resp",
+                           choices = if (nrow(a)) sort(unique(na.omit(a$responsable))) else character(0), server = TRUE)
+    })
+    acc_fil <- reactive({
+      df <- acc(); if (!nrow(df)) return(df)
+      if (!is.null(input$f_resp) && length(input$f_resp)) df <- df[df$responsable %in% input$f_resp, , drop=FALSE]
+      if (!is.null(input$f_estado) && length(input$f_estado)) df <- df[df$semaforo %in% input$f_estado | df$estado %in% input$f_estado, , drop=FALSE]
+      if (!any(is.na(input$f_fecha))) {
+        f1 <- as.Date(input$f_fecha[1]); f2 <- as.Date(input$f_fecha[2])
+        df$fecha_compromiso <- as.Date(df$fecha_compromiso)
+        df <- df[df$fecha_compromiso >= f1 & df$fecha_compromiso <= f2, , drop=FALSE]
+      }
+      df
+    })
+    output$tbl_prior <- DT::renderDT({
+      df <- prior(); if (!nrow(df)) df <- data.frame(prioridad="(sin datos)", total=0)
+      DT::datatable(df, options=list(pageLength=10), rownames=FALSE)
+    })
+    output$tbl_acc <- DT::renderDT({
+      dat <- acc_fil(); if (nrow(dat)) dat$fecha_compromiso <- as.Date(dat$fecha_compromiso)
+      DT::datatable(dat, options=list(pageLength=10, scrollX=TRUE), rownames=FALSE)
+    })
+    
+    # ====== ENTREGABLES ======
+    observe({
+      e <- entregables_raw()
+      updateSelectizeInput(session, "e_resp",
+                           choices = if (nrow(e) && "responsable" %in% names(e)) sort(unique(na.omit(e$responsable))) else character(0),
+                           server = TRUE)
+    })
+    ent_fil <- reactive({
+      df <- entregables_raw(); if (!nrow(df)) return(df)
+      if (!"responsable" %in% names(df)) df$responsable <- NA_character_
+      if (!"estado"       %in% names(df)) df$estado       <- NA_character_
+      if (!"fecha_compromiso" %in% names(df)) df$fecha_compromiso <- NA
+      if (!is.null(input$e_resp) && length(input$e_resp)) df <- df[df$responsable %in% input$e_resp, , drop=FALSE]
+      if (!is.null(input$e_estado) && length(input$e_estado)) df <- df[df$estado %in% input$e_estado, , drop=FALSE]
+      if (!any(is.na(input$e_rango))) {
+        f1 <- as.Date(input$e_rango[1]); f2 <- as.Date(input$e_rango[2])
+        df$fecha_compromiso <- as.Date(df$fecha_compromiso)
+        df <- df[df$fecha_compromiso >= f1 & df$fecha_compromiso <= f2, , drop=FALSE]
+      }
+      df
+    })
+    output$kpi_e_pend  <- renderText({ df<-ent_fil(); format(sum(tolower(df$estado) %in% c("pendiente","pendientes"), na.rm=TRUE)) })
+    output$kpi_e_curso <- renderText({ df<-ent_fil(); format(sum(tolower(df$estado) %in% c("en curso","progreso"), na.rm=TRUE)) })
+    output$kpi_e_ent   <- renderText({ df<-ent_fil(); format(sum(tolower(df$estado) %in% c("entregado","entregada"), na.rm=TRUE)) })
+    output$kpi_e_aprob <- renderText({ df<-ent_fil(); format(sum(tolower(df$estado) %in% c("aprobado","aprobada"), na.rm=TRUE)) })
+    output$tbl_ent <- DT::renderDT({
+      df <- ent_fil()
+      if ("fecha_compromiso" %in% names(df)) df$fecha_compromiso <- as.Date(df$fecha_compromiso)
+      if ("fecha_entrega"    %in% names(df)) df$fecha_entrega    <- as.Date(df$fecha_entrega)
+      DT::datatable(df, options=list(pageLength=12, scrollX=TRUE), rownames=FALSE)
+    })
+    output$plot_gantt_ent <- renderPlot({
+      df <- ent_fil(); validate(need(nrow(df)>0,"Sin datos de entregables"))
+      df$inicio <- as.Date(df$fecha_compromiso)
+      df$fin    <- as.Date(if ("fecha_entrega" %in% names(df)) df$fecha_entrega else df$fecha_compromiso) %||% df$inicio
+      df$nombre <- if ("nombre" %in% names(df)) df$nombre else paste("Entregable", seq_len(nrow(df)))
+      df$nombre <- factor(df$nombre, levels = rev(df$nombre))
+      ggplot(df, aes(y=nombre)) +
+        geom_segment(aes(x=inicio, xend=fin, yend=nombre), linewidth=3) +
+        scale_x_date(date_breaks="1 month", labels=scales::label_date("%Y-%m")) +
+        labs(x="Fecha", y=NULL) + theme_minimal()
+    })
+    output$dl_ent_csv <- downloadHandler(
+      filename=function(){ paste0("entregables_filtrados_", format(Sys.Date(), "%Y%m%d"), ".csv") },
+      content=function(file){ readr::write_csv(ent_fil(), file) }
+    )
+    output$dl_ent_png <- downloadHandler(
+      filename=function(){ paste0("gantt_entregables_", format(Sys.Date(), "%Y%m%d"), ".png") },
+      content=function(file){
+        df <- ent_fil(); validate(need(nrow(df)>0,"Sin datos"))
+        df$inicio <- as.Date(df$fecha_compromiso)
+        df$fin    <- as.Date(if ("fecha_entrega" %in% names(df)) df$fecha_entrega else df$fecha_compromiso) %||% df$inicio
+        df$nombre <- if ("nombre" %in% names(df)) df$nombre else paste("Entregable", seq_len(nrow(df)))
+        df$nombre <- factor(df$nombre, levels=rev(df$nombre))
+        p <- ggplot(df, aes(y=nombre)) +
+          geom_segment(aes(x=inicio, xend=fin, yend=nombre), linewidth=3) +
+          scale_x_date(date_breaks="1 month", labels=scales::label_date("%Y-%m")) +
+          labs(x="Fecha", y=NULL) + theme_minimal()
+        ggsave(file, plot=p, width=10, height=5, dpi=150)
+      },
+      contentType="image/png"
+    )
+    output$dl_ent_pdf <- downloadHandler(
+      filename=function(){ paste0("gantt_entregables_", format(Sys.Date(), "%Y%m%d"), ".pdf") },
+      content=function(file){
+        df <- ent_fil(); validate(need(nrow(df)>0,"Sin datos"))
+        rmd <- tempfile(fileext=".Rmd")
+        writeLines(con=rmd, text=paste0(
+          "---\n","title: \"Gantt de Entregables\"\n","output: pdf_document\n","---\n\n",
+          "```{r, echo=FALSE, message=FALSE, warning=FALSE}\n",
+          "library(ggplot2); library(scales)\n",
+          "d <- ", deparse(transform(df, inicio=as.Date(df$fecha_compromiso), fin=as.Date(if ('fecha_entrega' %in% names(df)) df$fecha_entrega else df$fecha_compromiso))), "\n",
+          "d$nombre <- if ('nombre' %in% names(d)) d$nombre else paste('Entregable', seq_len(nrow(d)))\n",
+          "d$nombre <- factor(d$nombre, levels=rev(d$nombre))\n",
+          "ggplot(d, aes(y=nombre)) + geom_segment(aes(x=inicio, xend=fin, yend=nombre), linewidth=3) +\n",
+          "scale_x_date(date_breaks='1 month', labels=scales::label_date('%Y-%m')) + labs(x='Fecha', y=NULL) + theme_minimal()\n",
+          "```\n"
+        ))
+        ok <- FALSE
+        if (requireNamespace("tinytex", quietly=TRUE)) {
+          try(rmarkdown::render(rmd, output_file=file, quiet=TRUE), silent=TRUE)
+          ok <- file.exists(file)
+        }
+        if (!ok && requireNamespace("pagedown", quietly=TRUE)) {
+          html <- tempfile(fileext=".html")
+          try(rmarkdown::render(rmd, output_file=basename(html), output_dir=dirname(html), quiet=TRUE), silent=TRUE)
+          try(pagedown::chrome_print(input=html, output=file, verbose=0), silent=TRUE)
+        }
+      },
+      contentType="application/pdf"
+    )
+    
+    # ====== RACI ======
+    # 1) Intentamos vista directa
+    raci_direct <- reactive({
+      qtry_first(c(
+        "SELECT * FROM v_raci",
+        "SELECT e.entregable_id, e.nombre AS entregable, r.resp_R AS R, r.resp_A AS A, r.resp_C AS C, r.resp_I AS I
+         FROM raci r JOIN entregable e ON e.entregable_id=r.entregable_id"
+      ))
+    })
+    # 2) Intentamos construir desde tabla relacional tipo (entregable_responsable)
+    raci_from_rel <- reactive({
+      q <- "
+        SELECT e.entregable_id, CAST(e.nombre AS CHAR(255)) AS entregable,
+               GROUP_CONCAT(CASE WHEN er.rol='R' THEN a.nombre_completo END SEPARATOR '; ') AS R,
+               GROUP_CONCAT(CASE WHEN er.rol='A' THEN a.nombre_completo END SEPARATOR '; ') AS A,
+               GROUP_CONCAT(CASE WHEN er.rol='C' THEN a.nombre_completo END SEPARATOR '; ') AS C,
+               GROUP_CONCAT(CASE WHEN er.rol='I' THEN a.nombre_completo END SEPARATOR '; ') AS I
+        FROM entregable_responsable er
+        JOIN entregable e ON e.entregable_id=er.entregable_id
+        LEFT JOIN autor a ON a.autor_id=er.autor_id
+        GROUP BY e.entregable_id, e.nombre
+        ORDER BY e.entregable_id DESC"
+      qsafe(q)
+    })
+    # 3) Fallback vacío si no hay estructura
+    raci_df <- reactive({
+      df <- raci_direct(); if (nrow(df)) return(df)
+      df <- raci_from_rel(); if (nrow(df)) return(df)
+      # último recurso: lista de entregables sin roles
+      e <- entregables_raw()
+      if (!nrow(e)) return(data.frame())
+      out <- unique(e[, c("entregable_id","nombre")])
+      names(out) <- c("entregable_id","entregable")
+      out$R <- NA_character_; out$A <- NA_character_; out$C <- NA_character_; out$I <- NA_character_
+      out
+    })
+    
+    # Filtro por texto
+    raci_fil <- reactive({
+      df <- raci_df()
+      if (!nrow(df)) return(df)
+      txt <- trimws(input$raci_busca %||% "")
+      if (nzchar(txt)) df <- df[grepl(txt, df$entregable, ignore.case=TRUE), , drop=FALSE]
+      df
+    })
+    
+    output$tbl_raci <- DT::renderDT({
+      df <- raci_fil()
+      # Reordena columnas si existen
+      cols <- intersect(c("entregable","R","A","C","I"), names(df))
+      if (length(cols)) df <- df[, unique(c(cols, setdiff(names(df), cols))), drop=FALSE]
+      DT::datatable(df, options=list(pageLength=12, scrollX=TRUE), rownames=FALSE)
+    })
+    
+    output$dl_raci_csv <- downloadHandler(
+      filename=function(){ paste0("raci_", format(Sys.Date(), "%Y%m%d"), ".csv") },
+      content=function(file){ readr::write_csv(raci_fil(), file) }
+    )
+    
+    output$dl_raci_pdf <- downloadHandler(
+      filename=function(){ paste0("raci_", format(Sys.Date(), "%Y%m%d"), ".pdf") },
+      content=function(file){
+        df <- raci_fil()
+        rmd <- tempfile(fileext=".Rmd")
+        writeLines(con=rmd, text=paste0(
+          "---\n","title: \"Matriz RACI\"\n","output: pdf_document\n","---\n\n",
+          "```{r, echo=FALSE}\nknitr::kable(", deparse(df), ", format='latex', booktabs=TRUE, longtable=TRUE)\n```\n"
+        ))
+        ok <- FALSE
+        if (requireNamespace("tinytex", quietly=TRUE)) {
+          try(rmarkdown::render(rmd, output_file=file, quiet=TRUE), silent=TRUE)
+          ok <- file.exists(file)
+        }
+        if (!ok && requireNamespace("pagedown", quietly=TRUE)) {
+          html <- tempfile(fileext=".html")
+          try(rmarkdown::render(rmd, output_file=basename(html), output_dir=dirname(html), quiet=TRUE), silent=TRUE)
+          try(pagedown::chrome_print(input=html, output=file, verbose=0), silent=TRUE)
+        }
+      },
+      contentType="application/pdf"
+    )
+    
+    # ====== STAKEHOLDERS ======
+    output$tbl_stake <- DT::renderDT({
+      s <- stakeholders()
+      DT::datatable(s, options=list(pageLength=12, scrollX=TRUE), rownames=FALSE)
+    })
+    
+    # ====== GANTT FASES ======
+    output$plot_gantt_fases <- renderPlot({
+      df <- fases(); validate(need(nrow(df)>0,"Sin datos de fases"))
+      df$nombre <- factor(df$nombre, levels=rev(df$nombre))
+      ggplot(df, aes(y=nombre)) +
+        geom_segment(aes(x=as.Date(fecha_inicio), xend=as.Date(fecha_fin), yend=nombre), linewidth=3) +
+        scale_x_date(date_breaks="1 month", labels=scales::label_date("%Y-%m")) +
+        labs(x="Fecha", y=NULL) + theme_minimal()
+    })
+    output$tbl_fases <- DT::renderDT({
+      DT::datatable(fases(), options=list(pageLength=12), rownames=FALSE)
+    })
+    
+    # ====== EXPORTES GENERALES ======
+    build_md <- function(prior, acc, evt){
+      lines <- c(
+        paste0("# Reporte PMP - ", format(Sys.Date(), "%Y-%m-%d")), "",
+        "## Resumen por prioridad",
+        "| Prioridad | Total |", "|---|---|",
+        if (nrow(prior)) apply(prior, 1, function(r) paste0("| ", r[['prioridad']], " | ", r[['total']], " |")) else "| (sin datos) | 0 |",
+        "", "## Acciones (semáforo)",
+        if (nrow(acc)) knitr::kable(acc, format = "pipe") else "_Sin acciones disponibles_",
+        "", "## Eventos recientes",
+        if (nrow(evt)) knitr::kable(evt, format = "pipe") else "_Sin eventos recientes_",
+        "", "_Generado desde Shiny_"
+      )
+      paste(lines, collapse="\n")
+    }
+    output$dl_md <- downloadHandler(
+      filename = function(){
+        base <- if (nzchar(input$rep_name)) input$rep_name else paste0("reporte_riesgos_", format(Sys.Date(), "%Y-%m-%d"))
+        paste0(base, ".md")
+      },
+      content = function(file){
+        writeLines(build_md(prior(), acc_fil(), evt()), file, useBytes=TRUE)
+      }
+    )
+    .make_pdf <- function(prior_df, acc_df, evt_df, heat_df, file_pdf){
+      rmd <- tempfile(fileext = ".Rmd")
+      png_heat <- tempfile(fileext = ".png")
+      if (nrow(heat_df)) {
+        p <- ggplot(heat_df, aes(x=factor(prob_nivel), y=factor(imp_nivel), fill=color_hex)) +
+          geom_tile(color="grey90") + scale_fill_identity() +
+          labs(x="Probabilidad", y="Impacto") + theme_minimal(base_size = 14)
+        ggsave(filename=png_heat, plot=p, width=7, height=5, dpi=150)
+      }
+      writeLines(con=rmd, text=paste0(
+        "---\n","title: \"Reporte PMP\"\n","date: \"", format(Sys.Date(), "%Y-%m-%d"), "\"\n",
+        "output: pdf_document\n","params:\n  prior: !r NULL\n  acc: !r NULL\n  evt: !r NULL\n  heat_png: !r NULL\n","---\n\n",
+        "```{r setup, include=FALSE}\nknitr::opts_chunk$set(message=FALSE, warning=FALSE); library(knitr)\n```\n\n",
+        "## Resumen por prioridad\n\n","```{r, echo=FALSE}\nif (nrow(params$prior)) kable(params$prior, format='latex', booktabs=TRUE) else cat('_Sin datos disponibles._')\n```\n\n",
+        "## Acciones (semáforo)\n\n","```{r, echo=FALSE}\nif (nrow(params$acc)) kable(params$acc, format='latex', booktabs=TRUE, longtable=TRUE) else cat('_Sin datos disponibles._')\n```\n\n",
+        "## Eventos recientes\n\n","```{r, echo=FALSE}\nif (nrow(params$evt)) kable(params$evt, format='latex', booktabs=TRUE) else cat('_Sin datos disponibles._')\n```\n\n",
+        "## Heatmap Prob × Impacto\n\n","```{r, echo=FALSE, out.width='80%'}\nif (!is.null(params$heat_png) && file.exists(params$heat_png)) knitr::include_graphics(params$heat_png) else cat('_Sin gráfico de heatmap._')\n```\n"
+      ))
+      ok <- FALSE
+      if (requireNamespace("tinytex", quietly=TRUE)) {
+        try(rmarkdown::render(input=rmd, output_file=file_pdf,
+                              params=list(prior=prior_df, acc=acc_df, evt=evt_df, heat_png=if (file.exists(png_heat)) png_heat else NULL),
+                              envir=new.env(parent=globalenv()), quiet=TRUE), silent=TRUE)
+        ok <- file.exists(file_pdf)
+      }
+      if (!ok && requireNamespace("pagedown", quietly=TRUE)) {
+        html <- tempfile(fileext=".html")
+        try(rmarkdown::render(input=rmd, output_file=basename(html), output_dir=dirname(html),
+                              params=list(prior=prior_df, acc=acc_df, evt=evt_df, heat_png=if (file.exists(png_heat)) png_heat else NULL),
+                              envir=new.env(parent=globalenv()), quiet=TRUE), silent=TRUE)
+        try(pagedown::chrome_print(input=html, output=file_pdf, verbose=0), silent=TRUE)
+        ok <- file.exists(file_pdf)
+      }
+      ok
+    }
+    output$dl_pdf <- downloadHandler(
+      filename = function(){ paste0(if (nzchar(input$rep_name)) input$rep_name else paste0("reporte_riesgos_", format(Sys.Date(), "%Y-%m-%d")), ".pdf") },
+      content  = function(file){ ok <- .make_pdf(prior(), acc(), evt(), heat(), file); if (!ok) showNotification("No se pudo generar el PDF (instala tinytex o pagedown).", type="error", duration=8) },
+      contentType = "application/pdf"
+    )
+    output$dl_exec_pdf <- downloadHandler(
+      filename = function(){ paste0(if (nzchar(input$rep_name)) input$rep_name else paste0("reporte_riesgos_", format(Sys.Date(), "%Y-%m-%d")), "_ejecutivo.pdf") },
+      content  = function(file){ ok <- .make_pdf(prior(), acc_fil(), evt(), heat(), file); if (!ok) showNotification("No se pudo generar el PDF (instala tinytex o pagedown).", type="error", duration=8) },
+      contentType = "application/pdf"
+    )
+    output$dl_acc_fil_csv <- downloadHandler(
+      filename=function(){ paste0(if (nzchar(input$rep_name)) input$rep_name else "reporte_riesgos", "_acciones_filtradas.csv") },
+      content =function(file){ readr::write_csv(acc_fil(), file) }
+    )
+    output$dl_prior_csv <- downloadHandler(
+      filename=function(){ paste0(if (nzchar(input$rep_name)) input$rep_name else "reporte_riesgos", "_prioridades.csv") },
+      content =function(file){ readr::write_csv(prior(), file) }
+    )
+    output$dl_evt_csv <- downloadHandler(
+      filename=function(){ paste0(if (nzchar(input$rep_name)) input$rep_name else "reporte_riesgos", "_eventos.csv") },
+      content =function(file){ readr::write_csv(evt(), file) }
+    )
+    output$dl_heat_png <- downloadHandler(
+      filename=function(){ paste0(if (nzchar(input$rep_name)) input$rep_name else "reporte_riesgos", "_heatmap.png") },
+      content =function(file){
+        h <- heat(); validate(need(nrow(h)>0, "Sin datos de heatmap"))
+        p <- ggplot(h, aes(x=factor(prob_nivel), y=factor(imp_nivel), fill=color_hex)) +
+          geom_tile(color="grey90") + scale_fill_identity() +
+          labs(x="Probabilidad", y="Impacto") + theme_minimal(base_size = 14)
+        ggsave(file, plot=p, width=8, height=5, dpi=150)
+      },
+      contentType = "image/png"
+    )
+    
+    # Snapshots CSV rápidos
+    observeEvent(input$snap_csv, ignoreInit = TRUE, {
+      if (isTRUE(input$snap_csv)) {
+        base <- if (nzchar(input$rep_name)) input$rep_name else paste0("reporte_riesgos_", format(Sys.Date(), "%Y-%m-%d"))
+        outdir <- normalizePath(file.path(getwd(),"PMP","Riesgos","reportes"), mustWork=FALSE)
+        if (!dir.exists(outdir)) dir.create(outdir, recursive=TRUE, showWarnings=FALSE)
+        readr::write_csv(prior(), file.path(outdir, paste0(base,"_prioridades.csv")))
+        readr::write_csv(acc(),   file.path(outdir, paste0(base,"_acciones.csv")))
+        readr::write_csv(evt(),   file.path(outdir, paste0(base,"_eventos.csv")))
+        showNotification(paste("Snapshots CSV guardados en", outdir), type="message", duration=6)
+      }
+    })
+  })
 }
 
 # ================== UI ==================
