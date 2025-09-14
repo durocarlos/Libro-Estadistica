@@ -1,5 +1,5 @@
 # ======================================================
-# app.R — Libro de Estadística + Alumnos (completo)
+# app.R — Libro de Estadística (limpio, completo)
 # ======================================================
 
 # --- Credenciales MySQL (ajusta si hace falta) ---
@@ -41,12 +41,6 @@ exec <- function(con, sql, ...) {
            error = function(e){ warning(e$message); -1L })
 }
 
-to_db_int <- function(x){
-  if (is.null(x) || length(x)==0 || is.na(x) || !nzchar(as.character(x))) NA_integer_ else as.integer(x)
-}
-`%||%` <- function(x,y) if (is.null(x) || length(x)==0 || is.na(x)) y else x
-
-# Helpers autores/capitulos
 rol_id <- function(con, rol_txt){
   df <- q(con,"SELECT rol_id FROM rol WHERE nombre=?", params=list(rol_txt))
   if (nrow(df)==1) df$rol_id[1] else NA_integer_
@@ -65,6 +59,7 @@ tiene_principal_cap <- function(con, cap){
 tiene_principal_sub <- function(con, sub){
   q(con,"SELECT COUNT(*) n FROM subcapitulo_autor WHERE subcapitulo_id=? AND rol_id=1", params=list(sub))$n[1] > 0
 }
+
 normalizar_cap <- function(con, cap){
   exec(con,"DROP TEMPORARY TABLE IF EXISTS tmp_orden_cap")
   exec(con, paste0(
@@ -102,7 +97,11 @@ normalizar_sub <- function(con, sub){
      WHERE sa.subcapitulo_id=?", params=list(sub))
 }
 
-# ============== MÓDULO: Correos (libre) ==============
+to_db_int <- function(x){
+  if (is.null(x) || length(x)==0 || is.na(x) || !nzchar(as.character(x))) NA_integer_ else as.integer(x)
+}
+
+# ============== MÓDULO: Correos (libre) + Contactos (tabla autor) ==============
 correo_libre_ui <- function(id){
   ns <- NS(id)
   tagList(
@@ -140,6 +139,7 @@ correo_libre_ui <- function(id){
     bslib::card(bslib::card_header("Registro (Log)"), DT::DTOutput(ns("tbl_log")))
   )
 }
+
 correo_libre_server <- function(id, con){
   moduleServer(id, function(input, output, session){
     ns <- session$ns
@@ -231,237 +231,10 @@ correo_libre_server <- function(id, con){
   })
 }
 
-# ================== MÓDULO ALUMNOS ==================
-# (usa nombres reales: id_nico, correo_electronico, etc.)
-alumnos_ui <- function(id){
-  ns <- NS(id)
-  tagList(
-    tabsetPanel(
-      tabPanel("Gestión",
-               br(),
-               fluidRow(
-                 column(5,
-                        h4("Formulario alumno"),
-                        pickerInput(ns("alumno_pick"), "Escoger alumno (para cargar/editar):", choices=NULL, options=list(`live-search`=TRUE)),
-                        actionButton(ns("alumno_load"), "Cargar selección"),
-                        br(), br(),
-                        textInput(ns("a_id_nico"),       "ID único (respetando ceros a la izquierda)"),
-                        textInput(ns("a_nombre"),        "Nombre completo"),
-                        textInput(ns("a_email"),         "Correo electrónico"),
-                        textInput(ns("a_carrera"),       "Carrera / Facultad"),
-                        textInput(ns("a_seccion"),       "Sección (Diurna / Nocturna)"),
-                        textInput(ns("a_curso"),         "Curso (II / III)"),
-                        textInput(ns("a_asignatura"),    "Asignatura (Descriptiva / Inferencial)"),
-                        br(),
-                        fluidRow(
-                          column(3, actionButton(ns("alumno_new"),  "Crear",   class="btn-primary",  width="100%")),
-                          column(3, actionButton(ns("alumno_save"), "Guardar", class="btn-warning",  width="100%")),
-                          column(3, actionButton(ns("alumno_del"),  "Eliminar",class="btn-danger",   width="100%")),
-                          column(3, actionButton(ns("alumno_clear"),"Limpiar", class="btn-default",  width="100%"))
-                        )
-                 ),
-                 column(7,
-                        h4("Alumnos"),
-                        DTOutput(ns("tabla_alumnos"))
-                 )
-               )
-      ),
-      tabPanel("KPIs",
-               br(),
-               fluidRow(
-                 column(4, bslib::value_box(title="Total alumnos", value=textOutput(ns("kpi_total")),   theme_color="primary")),
-                 column(4, bslib::value_box(title="Por sección",   value=textOutput(ns("kpi_seccion")), theme_color="indigo")),
-                 column(4, bslib::value_box(title="Por asignatura",value=textOutput(ns("kpi_asig")),    theme_color="teal"))
-               ),
-               br(),
-               bslib::card(
-                 bslib::card_header("Resumen"),
-                 DTOutput(ns("resumen_tbl"))
-               )
-      )
-    )
-  )
-}
-
-alumnos_server <- function(id, con){
-  moduleServer(id, function(input, output, session){
-    ns <- session$ns
-    
-    # Cargar listas iniciales
-    alumnos_tbl <- reactiveVal(
-      q(con, "SELECT alumno_id, id_nico, nombre_completo, correo_electronico AS email,
-                     carrera_facultad, seccion, curso, asignatura
-              FROM alumno ORDER BY nombre_completo")
-    )
-    
-    # Tabla
-    output$tabla_alumnos <- renderDT({
-      df <- alumnos_tbl()
-      if (!nrow(df)) df <- tibble(
-        alumno_id=integer(), id_nico=character(), nombre_completo=character(), email=character(),
-        carrera_facultad=character(), seccion=character(), curso=character(), asignatura=character()
-      )
-      datatable(df, selection="single", rownames=FALSE,
-                options=list(pageLength=12, order=list(list(2,"asc")), columnDefs=list(list(visible=FALSE, targets=0))))
-    })
-    
-    # Select de alumnos
-    observe({
-      df <- alumnos_tbl()
-      if (!nrow(df)) {
-        updatePickerInput(session, "alumno_pick", choices = setNames(character(0), character(0)))
-      } else {
-        updatePickerInput(session, "alumno_pick",
-                          choices = setNames(df$alumno_id, paste0(df$nombre_completo, " <", df$email, ">")))
-      }
-    })
-    
-    # Cargar por selección
-    load_alumno_by_id <- function(id_sel){
-      id_num <- suppressWarnings(as.integer(id_sel))
-      if (is.na(id_num)) { showNotification("Selección inválida.", type="error"); return(invisible()) }
-      a <- q(con, "SELECT * FROM alumno WHERE alumno_id=?", params=list(id_num))
-      if (!nrow(a)) { showNotification("No se encontró el alumno.", type="error"); return(invisible()) }
-      updateTextInput(session, "a_id_nico",    value = a$id_nico[1]             %||% "")
-      updateTextInput(session, "a_nombre",     value = a$nombre_completo[1]     %||% "")
-      updateTextInput(session, "a_email",      value = a$correo_electronico[1]  %||% "")
-      updateTextInput(session, "a_carrera",    value = a$carrera_facultad[1]    %||% "")
-      updateTextInput(session, "a_seccion",    value = a$seccion[1]             %||% "")
-      updateTextInput(session, "a_curso",      value = a$curso[1]               %||% "")
-      updateTextInput(session, "a_asignatura", value = a$asignatura[1]          %||% "")
-      showNotification("Alumno cargado ✔", type="message")
-    }
-    observeEvent(input$alumno_load, { req(input$alumno_pick); load_alumno_by_id(input$alumno_pick) }, ignoreInit=TRUE)
-    observeEvent(input$alumno_pick, { if (!is.null(input$alumno_pick) && nzchar(input$alumno_pick)) load_alumno_by_id(input$alumno_pick) }, ignoreInit=TRUE)
-    
-    # Limpiar formulario
-    observeEvent(input$alumno_clear, {
-      updateTextInput(session,"a_id_nico",value="")
-      updateTextInput(session,"a_nombre",value="")
-      updateTextInput(session,"a_email",value="")
-      updateTextInput(session,"a_carrera",value="")
-      updateTextInput(session,"a_seccion",value="")
-      updateTextInput(session,"a_curso",value="")
-      updateTextInput(session,"a_asignatura",value="")
-      updatePickerInput(session,"alumno_pick",selected=character(0))
-      shinyjs::runjs("$('#a_id_nico').trigger('focus');")
-    }, ignoreInit=TRUE)
-    
-    # Crear (no permite si hay selección activa)
-    observeEvent(input$alumno_new, {
-      if (!is.null(input$alumno_pick) && nzchar(input$alumno_pick)) {
-        showModal(modalDialog(
-          title = "No se puede crear aún",
-          "Tienes un alumno seleccionado. Presiona 'Limpiar' para borrar el formulario y poder crear un nuevo registro.",
-          easyClose = TRUE, footer = modalButton("Entendido")
-        ))
-        return(invisible())
-      }
-      # Validaciones mínimas
-      validate(
-        need(nchar(trimws(input$a_id_nico)) > 0,   "ID único requerido"),
-        need(nchar(trimws(input$a_nombre))  > 0,   "Nombre requerido"),
-        need(nchar(trimws(input$a_email))   > 0,   "Correo requerido")
-      )
-      # Insert
-      sql <- "INSERT INTO alumno
-              (id_nico, nombre_completo, correo_electronico, carrera_facultad, seccion, curso, asignatura)
-              VALUES (?,?,?,?,?,?,?)"
-      res <- tryCatch(DBI::dbExecute(con, sql, params = list(
-        trimws(input$a_id_nico), trimws(input$a_nombre), tolower(trimws(input$a_email)),
-        trimws(input$a_carrera), trimws(input$a_seccion), trimws(input$a_curso), trimws(input$a_asignatura)
-      )), error=function(e) e)
-      if (inherits(res,"error")) {
-        msg <- conditionMessage(res)
-        if (grepl("Duplicate entry|1062", msg, ignore.case=TRUE)) {
-          showNotification("❌ No se pudo crear: ya existe un alumno con ese ID o correo.", type="error", duration=8)
-        } else {
-          showNotification(paste("❌ Error al crear alumno:", msg), type="error", duration=8)
-        }
-        return(invisible())
-      }
-      # Refrescar
-      alumnos_tbl(q(con, "SELECT alumno_id, id_nico, nombre_completo, correo_electronico AS email, carrera_facultad, seccion, curso, asignatura FROM alumno ORDER BY nombre_completo"))
-      updateTextInput(session,"a_id_nico",""); updateTextInput(session,"a_nombre",""); updateTextInput(session,"a_email","")
-      updateTextInput(session,"a_carrera",""); updateTextInput(session,"a_seccion",""); updateTextInput(session,"a_curso",""); updateTextInput(session,"a_asignatura","")
-      updatePickerInput(session,"alumno_pick",selected=character(0))
-      shinyjs::runjs("$('#a_id_nico').trigger('focus');")
-      showNotification("✅ Alumno creado. Formulario listo para un nuevo registro.", type="message")
-    })
-    
-    # Guardar cambios
-    observeEvent(input$alumno_save, {
-      req(input$alumno_pick)
-      validate(
-        need(nchar(trimws(input$a_nombre)) > 0, "Nombre requerido"),
-        need(nchar(trimws(input$a_email))  > 0, "Correo requerido")
-      )
-      sql <- "UPDATE alumno
-              SET id_nico=?, nombre_completo=?, correo_electronico=?, carrera_facultad=?, seccion=?, curso=?, asignatura=?
-              WHERE alumno_id=?"
-      res <- tryCatch(DBI::dbExecute(con, sql, params=list(
-        trimws(input$a_id_nico), trimws(input$a_nombre), tolower(trimws(input$a_email)),
-        trimws(input$a_carrera), trimws(input$a_seccion), trimws(input$a_curso), trimws(input$a_asignatura),
-        as.integer(input$alumno_pick)
-      )), error=function(e) e)
-      if (inherits(res,"error")) {
-        showNotification(paste("❌ Error al guardar:", conditionMessage(res)), type="error", duration=8); return(invisible())
-      }
-      alumnos_tbl(q(con, "SELECT alumno_id, id_nico, nombre_completo, correo_electronico AS email, carrera_facultad, seccion, curso, asignatura FROM alumno ORDER BY nombre_completo"))
-      showNotification("📝 Cambios guardados.", type="warning")
-    })
-    
-    # Eliminar
-    observeEvent(input$alumno_del, {
-      req(input$alumno_pick)
-      res <- tryCatch(DBI::dbExecute(con, "DELETE FROM alumno WHERE alumno_id=?", params=list(as.integer(input$alumno_pick))), error=function(e) e)
-      if (inherits(res,"error")) {
-        showNotification(paste("❌ No se pudo eliminar:", conditionMessage(res)), type="error", duration=8); return(invisible())
-      }
-      alumnos_tbl(q(con, "SELECT alumno_id, id_nico, nombre_completo, correo_electronico AS email, carrera_facultad, seccion, curso, asignatura FROM alumno ORDER BY nombre_completo"))
-      updatePickerInput(session,"alumno_pick",selected=character(0))
-      showNotification("🗑️ Alumno eliminado.", type="message")
-      updateTextInput(session,"a_id_nico",""); updateTextInput(session,"a_nombre",""); updateTextInput(session,"a_email","")
-      updateTextInput(session,"a_carrera",""); updateTextInput(session,"a_seccion",""); updateTextInput(session,"a_curso",""); updateTextInput(session,"a_asignatura","")
-    })
-    
-    # -------- KPIs & Resumen (vistas si existen; si no, cálculo directo) --------
-    safe_q <- function(sql){
-      tryCatch(DBI::dbGetQuery(con, sql), error=function(e) tibble())
-    }
-    output$kpi_total   <- renderText({
-      k <- safe_q("SELECT total_alumnos AS n FROM v_alumno_kpis LIMIT 1")
-      if (nrow(k)) return(format(k$n[1]))
-      n <- safe_q("SELECT COUNT(*) n FROM alumno"); format(if (nrow(n)) n$n[1] else 0)
-    })
-    output$kpi_seccion <- renderText({
-      k <- safe_q("SELECT total_diurna, total_nocturna FROM v_alumno_kpis LIMIT 1")
-      if (nrow(k)) return(paste("Diurna:", k$total_diurna[1], "· Nocturna:", k$total_nocturna[1]))
-      d <- safe_q("SELECT SUM(LOWER(seccion) LIKE 'diurna%') di, SUM(LOWER(seccion) LIKE 'nocturna%') no FROM alumno")
-      paste("Diurna:", d$di %||% 0, "· Nocturna:", d$no %||% 0)
-    })
-    output$kpi_asig <- renderText({
-      k <- safe_q("SELECT total_descriptiva, total_inferencial FROM v_alumno_kpis LIMIT 1")
-      if (nrow(k)) return(paste("Descriptiva:", k$total_descriptiva[1], "· Inferencial:", k$total_inferencial[1]))
-      d <- safe_q("SELECT SUM(LOWER(asignatura) LIKE 'descriptiva%') d, SUM(LOWER(asignatura) LIKE 'inferencial%') i FROM alumno")
-      paste("Descriptiva:", d$d %||% 0, "· Inferencial:", d$i %||% 0)
-    })
-    output$resumen_tbl <- renderDT({
-      df <- safe_q("SELECT * FROM v_alumno_resumen ORDER BY seccion, curso, asignatura, carrera_facultad")
-      if (!nrow(df)) df <- safe_q("
-        SELECT seccion, curso, asignatura, carrera_facultad, COUNT(*) AS total
-        FROM alumno
-        GROUP BY seccion, curso, asignatura, carrera_facultad
-        ORDER BY seccion, curso, asignatura, carrera_facultad")
-      datatable(df, rownames=FALSE, options=list(pageLength=15, scrollX=TRUE))
-    })
-  })
-}
-
 # ================== UI ==================
 ui <- fluidPage(
   useShinyjs(),
-  titlePanel("Libro de Estadística — Autores & Alumnos"),
+  titlePanel("Asignador de Autores — Libro de Estadística"),
   tags$small("Variables: MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DBNAME"),
   br(),
   tags$style(HTML("
@@ -533,7 +306,6 @@ ui <- fluidPage(
                          column(7, h4("Autores"), DTOutput("tabla_autores"))
                        )
               ),
-              tabPanel("Alumnos", alumnos_ui("alum_mod")),
               tabPanel("Reportes",
                        fluidRow(
                          column(3,
@@ -569,10 +341,10 @@ ui <- fluidPage(
                                             tabPanel("Riesgos PMP",
                                                      uiOutput("pmp_conn_status"),
                                                      fluidRow(
-                                                       column(3, bslib::value_box(title="Extreme/Crítica", value=htmlOutput("kpi_extreme"), theme_color="#b71c1c")),
-                                                       column(3, bslib::value_box(title="Alta",            value=htmlOutput("kpi_high"),    theme_color="#e65100")),
-                                                       column(3, bslib::value_box(title="Media",           value=htmlOutput("kpi_medium"),  theme_color="#fdd835")),
-                                                       column(3, bslib::value_box(title="Baja",            value=htmlOutput("kpi_low"),     theme_color="#4a3047"))
+                                                       column(3, bslib::value_box(htmlOutput("kpi_extreme"), title="Extreme/Crítica", theme_color="#b71c1c")),
+                                                       column(3, bslib::value_box(htmlOutput("kpi_high"),    title="Alta",            theme_color="#e65100")),
+                                                       column(3, bslib::value_box(htmlOutput("kpi_medium"),  title="Media",           theme_color="#fdd835")),
+                                                       column(3, bslib::value_box(htmlOutput("kpi_low"),     title="Baja",            theme_color="#4a3047"))
                                                      ),
                                                      br(),
                                                      bslib::card(bslib::card_header("Acciones (semáforo)"), DTOutput("pmp_tbl_acciones")),
@@ -600,9 +372,9 @@ ui <- fluidPage(
 server <- function(input, output, session){
   con <- get_con()
   onStop(function() try(DBI::dbDisconnect(con), silent=TRUE))
+  `%||%` <- function(x,y) if (is.null(x) || length(x)==0 || is.na(x)) y else x
   try(exec(con, "SET SESSION group_concat_max_len = 32768"), silent = TRUE)
   
-  # Datos base autores/capitulos/roles
   capitulos <- q(con,"SELECT capitulo_id, numero, titulo FROM capitulo ORDER BY numero")
   autores   <- q(con,"SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
   roles_cat <- q(con,"SELECT rol_id, nombre FROM rol ORDER BY rol_id")
@@ -670,31 +442,42 @@ server <- function(input, output, session){
   normalizar_sub(con, df$subcapitulo_id[s]); showNotification("Actualizado en subcapítulo ✔", type="warning")
   })
   
+  output$dl_cap_csv <- downloadHandler(filename=function() sprintf("equipo_cap_%s.csv", input$cap_num),
+                                       content=function(file) write.csv(cap_df(), file, row.names=FALSE, fileEncoding="UTF-8"))
+  output$dl_sub_csv <- downloadHandler(filename=function() sprintf("equipo_cap_%s_sub_%s.csv", input$cap_num, input$sub_num),
+                                       content=function(file) write.csv(sub_df(), file, row.names=FALSE, fileEncoding="UTF-8"))
+  output$dl_full_csv <- downloadHandler(filename=function() sprintf("asignaciones_%s.csv", format(Sys.Date(), "%Y%m%d")),
+                                        content=function(file){
+                                          df <- q(con,"SELECT c.numero, c.titulo, a.nombre_completo, a.email, r.nombre AS rol, ca.orden
+                   FROM capitulo_autor ca
+                   JOIN capitulo c ON c.capitulo_id=ca.capitulo_id
+                   JOIN autor a    ON a.autor_id=ca.autor_id
+                   JOIN rol r      ON r.rol_id=ca.rol_id
+                   ORDER BY c.numero, ca.orden, a.nombre_completo")
+                                          write.csv(df, file, row.names=FALSE, fileEncoding="UTF-8")
+                                        })
+  
   # ------------------ CRUD de autores ------------------
   autores_tbl <- reactiveVal(q(con,"SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo"))
   output$tabla_autores <- renderDT({ datatable(autores_tbl(), selection="single", rownames=FALSE, options=list(pageLength=12, order=list(list(1,"asc")), columnDefs=list(list(visible=FALSE, targets=0)))) })
-  load_autor_by_id <- function(id_sel){
-    id_num <- suppressWarnings(as.integer(id_sel)); if (is.na(id_num)) { showNotification("Selección inválida.", type="error"); return(invisible()) }
-    a <- q(con,"SELECT * FROM autor WHERE autor_id=?", params=list(id_num)); if (!nrow(a)) { showNotification("No se encontró el autor.", type="error"); return(invisible()) }
-    updateTextInput(session,"a_nombre", value = a$nombre_completo[1] %||% "")
-    updateTextInput(session,"a_email",  value = a$email[1]            %||% "")
-    updateTextInput(session,"a_pais_ciudad", value = a$pais_ciudad[1] %||% "")
-    updateTextInput(session,"a_institucion", value = a$institucion[1] %||% "")
-    updateTextInput(session,"a_cargo",  value = a$cargo[1]            %||% "")
-    updateTextInput(session,"a_orcid",  value = a$orcid[1]            %||% "")
-    updateTextInput(session,"a_telefono", value = a$telefono[1]       %||% "")
-    showNotification("Autor cargado ✔", type="message")
+  load_autor_by_id <- function(id_sel){ id_num <- suppressWarnings(as.integer(id_sel)); if (is.na(id_num)) { showNotification("Selección inválida.", type="error"); return(invisible()) }
+  a <- q(con,"SELECT * FROM autor WHERE autor_id=?", params=list(id_num)); if (!nrow(a)) { showNotification("No se encontró el autor.", type="error"); return(invisible()) }
+  updateTextInput(session,"a_nombre", value = a$nombre_completo[1] %||% "")
+  updateTextInput(session,"a_email",  value = a$email[1]            %||% "")
+  updateTextInput(session,"a_pais_ciudad", value = a$pais_ciudad[1] %||% "")
+  updateTextInput(session,"a_institucion", value = a$institucion[1] %||% "")
+  updateTextInput(session,"a_cargo",  value = a$cargo[1]            %||% "")
+  updateTextInput(session,"a_orcid",  value = a$orcid[1]            %||% "")
+  updateTextInput(session,"a_telefono", value = a$telefono[1]       %||% "")
+  showNotification("Autor cargado ✔", type="message")
   }
   observeEvent(input$autor_load,{ req(input$autor_pick); load_autor_by_id(input$autor_pick) }, ignoreInit=TRUE)
   observeEvent(input$autor_pick,{ if (!is.null(input$autor_pick) && nzchar(input$autor_pick)) load_autor_by_id(input$autor_pick) }, ignoreInit=TRUE)
-  observeEvent(input$autor_clear,{
-    updateTextInput(session,"a_nombre",""); updateTextInput(session,"a_email",""); updateTextInput(session,"a_pais_ciudad",""); updateTextInput(session,"a_institucion",""); updateTextInput(session,"a_cargo",""); updateTextInput(session,"a_orcid",""); updateTextInput(session,"a_telefono","")
-    updatePickerInput(session,"autor_pick",selected=character(0))
-    shinyjs::reset("a_foto")
-  }, ignoreInit=TRUE)
+  observeEvent(input$autor_clear,{ updateTextInput(session,"a_nombre",value=""); updateTextInput(session,"a_email",value=""); updateTextInput(session,"a_pais_ciudad",value=""); updateTextInput(session,"a_institucion",value=""); updateTextInput(session,"a_cargo",value=""); updateTextInput(session,"a_orcid",value=""); updateTextInput(session,"a_telefono",value=""); updatePickerInput(session,"autor_pick",selected=character(0)); shinyjs::reset("a_foto") }, ignoreInit=TRUE)
   
-  # CREAR AUTOR (con guard y limpieza)
+  # ====== CREAR AUTOR (limpio, con guard y NULL literales) ======
   observeEvent(input$autor_new, {
+    # 1) Guard: no permitir crear si hay un autor seleccionado
     if (!is.null(input$autor_pick) && nzchar(input$autor_pick)) {
       showModal(modalDialog(
         title = "No se puede crear aún",
@@ -703,20 +486,32 @@ server <- function(input, output, session){
       ))
       return(invisible())
     }
+    
+    # 2) Validaciones mínimas
     validate(
       need(nchar(trimws(input$a_nombre)) > 0, "Nombre requerido"),
       need(nchar(trimws(input$a_email))  > 0, "Email requerido")
     )
+    
+    # 3) Detectar si la tabla tiene columnas de foto
     cols <- tryCatch(DBI::dbListFields(con, "autor"), error = function(e) character(0))
     has_blob <- all(c("foto","foto_mime","foto_nombre","foto_bytes","foto_fecha") %in% cols)
+    
+    # 4) Preparar archivo (si hay)
     foto_blob <- NULL; mime <- NA_character_; fname <- NA_character_; nbytes <- NA_integer_; with_blob <- FALSE
     if (!is.null(input$a_foto) && has_blob) {
       size <- suppressWarnings(file.info(input$a_foto$datapath)$size)
       if (is.finite(size) && size > 0) {
         bin <- readBin(input$a_foto$datapath, what = "raw", n = size)
-        foto_blob <- list(bin); mime <- input$a_foto$type; fname <- input$a_foto$name; nbytes <- as.integer(length(bin)); with_blob <- TRUE
+        foto_blob <- list(bin)
+        mime      <- input$a_foto$type
+        fname     <- input$a_foto$name
+        nbytes    <- as.integer(length(bin))
+        with_blob <- TRUE
       }
     }
+    
+    # 5) Armar SQL + params (sin pasar 'NULL' como string)
     if (has_blob && with_blob) {
       sql <- paste(
         "INSERT INTO autor",
@@ -724,7 +519,11 @@ server <- function(input, output, session){
         " foto, foto_mime, foto_nombre, foto_bytes, foto_fecha)",
         "VALUES (?,?,?,?,?,?,?,?,?,?,?, NOW())"
       )
-      params <- list(input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion, input$a_cargo,  input$a_orcid, input$a_telefono, foto_blob, mime, fname, nbytes)
+      params <- list(
+        input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion,
+        input$a_cargo,  input$a_orcid, input$a_telefono,
+        foto_blob, mime, fname, nbytes
+      )
     } else if (has_blob && !with_blob) {
       sql <- paste(
         "INSERT INTO autor",
@@ -732,11 +531,23 @@ server <- function(input, output, session){
         " foto, foto_mime, foto_nombre, foto_bytes, foto_fecha)",
         "VALUES (?,?,?,?,?,?,?, NULL, NULL, NULL, NULL, NULL)"
       )
-      params <- list(input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion, input$a_cargo,  input$a_orcid, input$a_telefono)
+      params <- list(
+        input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion,
+        input$a_cargo,  input$a_orcid, input$a_telefono
+      )
     } else {
-      sql <- paste("INSERT INTO autor","(nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono)","VALUES (?,?,?,?,?,?,?)")
-      params <- list(input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion, input$a_cargo,  input$a_orcid, input$a_telefono)
+      sql <- paste(
+        "INSERT INTO autor",
+        "(nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono)",
+        "VALUES (?,?,?,?,?,?,?)"
+      )
+      params <- list(
+        input$a_nombre, input$a_email, input$a_pais_ciudad, input$a_institucion,
+        input$a_cargo,  input$a_orcid, input$a_telefono
+      )
     }
+    
+    # 6) Ejecutar INSERT
     res <- tryCatch(DBI::dbExecute(con, sql, params = params), error = function(e) e)
     if (inherits(res, "error")) {
       msg <- conditionMessage(res)
@@ -747,15 +558,25 @@ server <- function(input, output, session){
       }
       return(invisible())
     }
+    
+    # 7) Refrescar tablas y selects
     autores_tbl(q(con,"SELECT autor_id, nombre_completo, email, pais_ciudad, institucion, cargo, orcid, telefono FROM autor ORDER BY nombre_completo"))
     autores <- q(con,"SELECT autor_id, nombre_completo, email FROM autor ORDER BY nombre_completo")
     updatePickerInput(session,"autor",      choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
     updatePickerInput(session,"autor_pick", choices = setNames(autores$autor_id, paste0(autores$nombre_completo," <",autores$email,">")))
-    updateTextInput(session, "a_nombre",""); updateTextInput(session, "a_email","")
-    updateTextInput(session, "a_pais_ciudad",""); updateTextInput(session, "a_institucion","")
-    updateTextInput(session, "a_cargo",""); updateTextInput(session, "a_orcid","")
-    updateTextInput(session, "a_telefono",""); updatePickerInput(session, "autor_pick", selected = character(0))
-    shinyjs::reset("a_foto"); shinyjs::runjs("$('#a_nombre').trigger('focus');")
+    
+    # 8) Limpiar formulario para nuevo ingreso
+    updateTextInput(session, "a_nombre",      value = "")
+    updateTextInput(session, "a_email",       value = "")
+    updateTextInput(session, "a_pais_ciudad", value = "")
+    updateTextInput(session, "a_institucion", value = "")
+    updateTextInput(session, "a_cargo",       value = "")
+    updateTextInput(session, "a_orcid",       value = "")
+    updateTextInput(session, "a_telefono",    value = "")
+    updatePickerInput(session, "autor_pick",  selected = character(0))
+    shinyjs::reset("a_foto")
+    shinyjs::runjs("$('#a_nombre').trigger('focus');")
+    
     showNotification("✅ Autor creado. Formulario listo para un nuevo registro.", type = "message")
   })
   
@@ -1015,12 +836,6 @@ server <- function(input, output, session){
           tags$ul(tags$li(strong("Filtros:")," capítulos, roles y rango de fechas."),
                   tags$li(strong("Capítulo + autores (PDF):")," autor principal + coautores por capítulo."),
                   tags$li(strong("Riesgos PMP:")," tablero, heatmap, eventos y exportación.")))
-    } else if (tab == "Alumnos") {
-      div(class="well", h4("Leyenda rápida — Alumnos"),
-          tags$ul(tags$li(strong("Crear:")," con el formulario vacío. Si hay selección, pulsa 'Limpiar'."),
-                  tags$li(strong("Guardar:")," actualiza el alumno seleccionado."),
-                  tags$li(strong("Eliminar:")," borra el alumno (si no tiene dependencias)."),
-                  tags$li(strong("KPIs:")," usan v_alumno_kpis / v_alumno_resumen si existen; si no, se calculan en vivo.")))
     } else {
       div(class="well", h4("Leyenda rápida — Asignaciones"),
           tags$ul(tags$li(strong("Asignar/Quitar/Actualizar:")," gestiona el equipo de cada capítulo/subcapítulo."),
@@ -1030,9 +845,8 @@ server <- function(input, output, session){
   observeEvent(input$help_toggle, { shinyjs::toggle(id="help-box", anim=TRUE, time=0.2) })
   observeEvent(input$main_tabs,   { shinyjs::hide("help-box") }, ignoreInit=TRUE)
   
-  # activar módulos
+  # activar módulo de correos
   correo_libre_server("corr_libre", con)
-  alumnos_server("alum_mod", con)
 }
 
 shinyApp(ui, server)
