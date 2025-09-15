@@ -1,0 +1,109 @@
+---
+# 📂 Documentación PMP – Libro de Estadística
+
+Este directorio concentra toda la **documentación oficial del proyecto Libro de Estadística**, organizada bajo el estándar **Project Management Plan (PMP / PMBOK)**.  
+Incluye diagramas, diccionarios de datos, matrices, notas técnicas y reportes de auditoría.
+
+---
+
+## 📑 Archivos existentes en esta carpeta
+
+### 🔹 Diagramas y modelos
+- `Diagrama_ERD_Autores.pdf` – Diagrama entidad–relación de autores.  
+- `ERD_Libro_V6.pdf` – Diagrama entidad–relación del Libro (versión 6).  
+- `ER_libro_PMP_riesgos_entregables_ver3.pdf` – Modelo ER con riesgos y entregables.  
+- `ER_PMP_matriz_notas_sin_correo_Ver4.pdf` – Matriz de notas sin módulo de correo.  
+- `ER_PMP_solo_modulos.pdf` – Versión reducida del ER mostrando solo módulos.  
+- `ER_PMP_matriz_notas_Ver5.pdf` – Matriz de notas versión 5.  
+
+### 🔹 Diccionarios de datos
+- `Diccionario_BD_Libro_PMP_COMPLETO.pdf` – Diccionario completo de la BD PMP.  
+- `Diccionario_BD_Libro_PMP_Ver5.pdf` – Diccionario de base de datos (versión 5).  
+- `Diccionario_BD_Libro_V6.pdf` – Diccionario actualizado a versión 6.  
+
+### 🔹 Notas técnicas
+- `Nota_Tecnica_Preflight_Triggers_Ver5.pdf` – Validación de triggers (versión 5).  
+- `Nota_Tecnica_incorporando_PMP_v6.pdf` – Integración de cambios PMP v6.  
+- `nota_tecnica_seed_pmp.pdf` – Registro del llenado inicial (seed) de tablas PMP.  
+- `Nota_Tecnica_V6_Entrega_Total.xlsx` – Control de entregas versión 6.  
+
+### 🔹 Otros
+- `nota_relaciones.md` – Relaciones de tablas y módulos.  
+
+---
+
+## 📘 Índice Maestro PMP
+
+Este índice define la estructura oficial del **Project Management Plan (PMP)** para el proyecto.  
+Cada sección debe tener su respectivo documento PDF dentro de esta carpeta.
+
+### 1. Inicio del Proyecto
+- Propósito del documento  
+- Antecedentes  
+- Objetivos del proyecto  
+- Alcance inicial  
+- Entregables preliminares  
+- Restricciones y supuestos  
+**Archivo esperado:** `PMP_inicio.pdf`
+
+### 2. Alcance del Proyecto
+- Declaración de alcance  
+- Entregables principales (capítulos, matrices, informes)  
+- Exclusiones del proyecto  
+- Criterios de aceptación de entregables  
+**Archivo esperado:** `PMP_alcance.pdf`
+
+### 3. Cronograma
+- Fases del proyecto  
+- Hitos principales  
+- Cronograma detallado (capítulos y entregas por fecha)  
+- Control de plazos  
+**Archivo esperado:** `PMP_cronograma.pdf`
+
+### 4. Gestión de Riesgos
+- Identificación de riesgos  
+- Escalas de probabilidad e impacto  
+- Categorías de riesgo  
+- Planes de mitigación y contingencia  
+- Seguimiento y registro de incidentes  
+**Archivo esperado:** `PMP_riesgos.pdf`
+
+### 5. Gestión de la Comunicación
+- Roles y responsabilidades  
+- Flujos de comunicación  
+- Herramientas (GitHub, Shiny, OSF, correo institucional)  
+- Informes de seguimiento  
+**Archivo esperado:** `PMP_comunicacion.pdf`
+
+### 6. Gestión de la Calidad
+- Criterios de calidad (normas APA, revisiones de pares, consistencia BD)  
+- Procedimientos de control de calidad  
+- Herramientas de validación (auditorías, triggers, seeds)  
+**Archivo esperado:** `PMP_calidad.pdf`
+
+### 7. Cierre del Proyecto
+- Entregables finales  
+- Procedimiento de aprobación y cierre formal  
+- Lecciones aprendidas  
+- Difusión académica (Zenodo, OSF, repositorios abiertos)  
+**Archivo esperado:** `PMP_cierre.pdf`
+
+---
+
+## 📌 Convenciones de archivo
+- Todos los documentos se guardan en **PDF** para garantizar portabilidad.  
+- Los nombres siguen la convención:  
+  - `PMP_[seccion].pdf` → documentos del plan.  
+  - `Nota_Tecnica_[tema].pdf` → auditorías, seeds, validaciones.  
+- Versiones intermedias se nombran con sufijos `Ver2`, `Ver3`, `Ver4`, etc.  
+
+---
+
+## 📜 Propósito
+Esta carpeta documenta formalmente cada paso en el desarrollo del **Libro de Estadística**, desde el modelado de datos hasta la validación PMP.  
+Sirve como respaldo para:  
+- Auditorías internas y externas.  
+- Registro de propiedad intelectual (SENADI, OSF, Zenodo).  
+- Evidencia en procesos de acreditación académica.  
+
+---
